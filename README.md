@@ -1,48 +1,72 @@
 # aufzeichnung.nvim
 
-A comprehensive note-taking and task tracking plugin for Neovim with advanced visualization and analytics capabilities.
+**Markdown task tracking system with SQLite persistence and advanced analytics.**
+
+A Neovim plugin that tracks tasks across your markdown files, providing powerful analytics and visualizations. Works standalone or with [zk-nvim](https://github.com/mickael-menu/zk-nvim) for advanced note management.
 
 ## ✨ Features
 
-- 📝 **Note Management** - Integrated with [zk-nvim](https://github.com/mickael-menu/zk-nvim) for powerful Zettelkasten-style note-taking
-- ✅ **Task Tracking** - Track tasks across your notes with SQLite persistence
+### Core (No Dependencies Required)
+- ✅ **Task Tracking** - Automatically track tasks in markdown files with SQLite persistence
 - 📊 **Visualizations** - ASCII charts, histograms, pie charts, line plots, and tables
-- 📅 **Smart Journals** - Daily journals with automatic task carryover
-- 🔄 **Task Counters** - Org-mode style progress counters for markdown headings
 - 🎯 **Analytics** - Detailed productivity insights and trend analysis
+- 🔄 **Task Counters** - Org-mode style progress counters for markdown headings
+- 📅 **Smart Carryover** - Automatically carry unfinished tasks to new journals
 - 🆔 **UUID v7 Support** - Time-ordered unique task identifiers
+- 👨‍👩‍👧‍👦 **Parent-Child Tasks** - Hierarchical task relationships
+
+### Optional Integration
+- 📝 **zk-nvim Integration** - Advanced note creation, templates, and management (optional)
 
 ## 📦 Installation
 
-### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
+### Minimal (Task Tracking Only)
 
 ```lua
 {
   "yourusername/aufzeichnung.nvim",
   dependencies = {
-    "mickael-menu/zk-nvim",        -- Note management
-    "kkharji/sqlite.lua",          -- Task tracking database
+    "kkharji/sqlite.lua",          -- Required for task database
   },
   config = function()
     require("notes").setup({
-      -- Your configuration here
+      directories = {
+        notebook = "~/notes",
+      },
+      tracking = {
+        personal = {
+          enabled = true,
+          filename_patterns = { ".*%.md$" },  -- Track all markdown files
+        },
+      },
     })
   end,
 }
 ```
 
-### Using [packer.nvim](https://github.com/wbthomason/packer.nvim)
+### With zk-nvim (Full Features)
 
 ```lua
-use {
+{
   "yourusername/aufzeichnung.nvim",
-  requires = {
-    "mickael-menu/zk-nvim",
-    "kkharji/sqlite.lua",
+  dependencies = {
+    "mickael-menu/zk-nvim",        -- Optional: Advanced note management
+    "kkharji/sqlite.lua",          -- Required: Task tracking database
   },
   config = function()
     require("notes").setup({
-      -- Your configuration here
+      directories = {
+        notebook = "~/notes",
+      },
+      tracking = {
+        personal = {
+          enabled = true,
+          filename_patterns = { "perso%-.*%.md$" },
+        },
+      },
+      integrations = {
+        zk = { enabled = "auto" },  -- Auto-detect zk-nvim
+      },
     })
   end,
 }
@@ -218,22 +242,32 @@ require("notes").setup({
 
 ## 🚀 Usage
 
-### Creating Notes and Tasks
+### Task Management (Always Available)
 
+**Create Tasks:**
+- `<leader>nT` - Create a new task with UUID (`:NotesNewTask`)
+- `<leader>nC` - Create a child task under parent (`:NotesNewChildTask`)
+
+**View Analytics:**
+- `<leader>nd` - Task dashboard (`:NotesDashboard`)
+- `<leader>ndt` - Today's overview (`:NotesToday`)
+- `<leader>ndy` - Yesterday's activity (`:NotesYesterday`)
+- `<leader>ndW` - Weekly overview (`:NotesWeekly`)
+- `<leader>nds` - Quick stats (`:NotesStats`)
+
+**Help:**
+- `<leader>n?` - Show help (`:NotesHelp`)
+- `<leader>nh` - System health check (`:NotesHealth`)
+
+### Note Management (Only with zk-nvim)
+
+**Create Notes:**
 - `<leader>nn` - Create a new note
 - `<leader>nN` - Create a note in a specific directory
-- `<leader>nT` - Create a new task (with UUID v7)
-- `<leader>nC` - Create a child task
-
-### Journals
-
 - `<leader>nj` - Create/open today's personal journal
 - `<leader>nw` - Create/open today's work journal
 
-Journals automatically carry over unfinished tasks from the previous day.
-
-### Browsing Notes
-
+**Browse Notes:**
 - `<leader>no` - Open notes
 - `<leader>nf` - Find notes
 - `<leader>nt` - Browse tags
@@ -327,13 +361,38 @@ Legend:
 
 ## 🔧 Requirements
 
+### Core Requirements (Task Tracking)
 - Neovim >= 0.9.0
-- [zk-nvim](https://github.com/mickael-menu/zk-nvim) - Note management
-- [sqlite.lua](https://github.com/kkharji/sqlite.lua) - Task database
-- [zk](https://github.com/mickael-menu/zk) CLI tool
+- [sqlite.lua](https://github.com/kkharji/sqlite.lua) - Task database and persistence
 
-**Optional:**
-- [mini.pick](https://github.com/echasnovski/mini.nvim) or [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) for picker
+### Optional (Advanced Note Management)
+- [zk-nvim](https://github.com/mickael-menu/zk-nvim) - Note creation and management
+- [zk](https://github.com/mickael-menu/zk) CLI tool - Required if using zk-nvim
+- [mini.pick](https://github.com/echasnovski/mini.nvim) or [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) - For note/task pickers
+
+## 💡 Standalone vs zk-nvim
+
+### Without zk-nvim (Standalone Mode)
+- ✅ Full task tracking and analytics
+- ✅ All visualization and dashboards
+- ✅ Task counters
+- ✅ Manual task creation with UUIDs
+- ✅ Journal carryover logic
+- ⚠️ You create markdown files manually (or with your preferred tool)
+- ⚠️ No automatic note/journal file creation
+- ⚠️ No note browsing/search commands
+
+**Perfect for:** Users with existing markdown workflows (Obsidian, Logseq, plain files, etc.)
+
+### With zk-nvim (Full Integration)
+- ✅ Everything from standalone mode, PLUS:
+- ✅ Automatic note/journal creation with templates
+- ✅ Advanced note browsing and search
+- ✅ Tag management
+- ✅ Backlinks and note relationships
+- ✅ LSP integration for note navigation
+
+**Perfect for:** Users wanting a complete Zettelkasten-style note system
 
 ## 🧪 Testing
 
