@@ -1,0 +1,124 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        nvim-version: ['stable', 'nightly']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Neovim (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          if [ "${{ matrix.nvim-version }}" = "stable" ]; then
+            wget -q https://github.com/neovim/neovim/releases/download/stable/nvim-linux64.tar.gz
+            tar xzf nvim-linux64.tar.gz
+            echo "$PWD/nvim-linux64/bin" >> $GITHUB_PATH
+          else
+            wget -q https://github.com/neovim/neovim/releases/download/nightly/nvim-linux64.tar.gz
+            tar xzf nvim-linux64.tar.gz
+            echo "$PWD/nvim-linux64/bin" >> $GITHUB_PATH
+          fi
+
+      - name: Install Neovim (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if [ "${{ matrix.nvim-version }}" = "stable" ]; then
+            brew install neovim
+          else
+            brew install --HEAD neovim
+          fi
+
+      - name: Verify Neovim installation
+        run: |
+          nvim --version
+          echo "Neovim installed successfully"
+
+      - name: Install plenary.nvim
+        run: |
+          mkdir -p ~/.local/share/nvim/lazy
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
+            ~/.local/share/nvim/lazy/plenary.nvim
+
+      - name: Install sqlite.lua
+        run: |
+          mkdir -p ~/.local/share/nvim/lazy
+          git clone --depth 1 https://github.com/kkharji/sqlite.lua \
+            ~/.local/share/nvim/lazy/sqlite.lua
+
+      - name: Run unit tests
+        run: make test-unit
+        continue-on-error: false
+
+      - name: Run integration tests
+        run: make test-integration
+        continue-on-error: false
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- OS: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Neovim: ${{ matrix.nvim-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 luarocks
+
+      - name: Install luacheck
+        run: |
+          sudo luarocks install luacheck
+
+      - name: Run luacheck
+        run: |
+          luacheck lua/ tests/ --globals vim --no-unused-args --no-max-line-length
+        continue-on-error: true
+
+  style-check:
+    name: Code Style
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 luarocks
+
+      - name: Install StyLua
+        run: |
+          wget -q https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-linux-x86_64.zip
+          unzip stylua-linux-x86_64.zip
+          chmod +x stylua
+          sudo mv stylua /usr/local/bin/
+
+      - name: Check code formatting
+        run: |
+          stylua --check lua/ tests/
+        continue-on-error: true

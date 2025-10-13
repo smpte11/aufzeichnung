@@ -335,9 +335,90 @@ Legend:
 **Optional:**
 - [mini.pick](https://github.com/echasnovski/mini.nvim) or [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) for picker
 
+## 🧪 Testing
+
+This plugin includes a comprehensive test suite with both unit and integration tests.
+
+### Prerequisites
+
+- [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) - Required for running tests
+- [sqlite.lua](https://github.com/kkharji/sqlite.lua) - Required for integration tests
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run only unit tests
+make test-unit
+
+# Run only integration tests
+make test-integration
+
+# Run a specific test file
+make test-file FILE=tests/unit/utils_spec.lua
+
+# Run linter
+make lint
+
+# Clean temporary test files
+make clean
+```
+
+### Test Structure
+
+```
+tests/
+├── unit/                      # Unit tests
+│   ├── utils_spec.lua        # Tests for utils module
+│   ├── plot_spec.lua         # Tests for plot module
+│   └── task_counter_spec.lua # Tests for task counter
+├── integration/               # Integration tests
+│   ├── task_tracking_spec.lua # Task tracking tests
+│   └── journal_spec.lua      # Journal management tests
+├── fixtures/                  # Test fixtures and data
+└── minimal_init.lua          # Minimal Neovim config for tests
+```
+
+### Writing Tests
+
+Tests use [plenary.nvim's test harness](https://github.com/nvim-lua/plenary.nvim#plenarytest_harness). Example:
+
+```lua
+describe("my feature", function()
+  it("should do something", function()
+    local result = my_function()
+    assert.are.equal(expected, result)
+  end)
+end)
+```
+
+### Continuous Integration
+
+This project uses GitHub Actions for CI/CD. Tests run automatically on:
+- Every push to `main` or `develop` branches
+- Every pull request
+- Multiple OS (Ubuntu, macOS) and Neovim versions (stable, nightly)
+
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Write tests for your changes
+4. Make sure all tests pass (`make test`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+### Development Guidelines
+
+- Write tests for all new features
+- Maintain existing test coverage
+- Follow Lua style conventions (consider using [StyLua](https://github.com/JohnnyMorganz/StyLua))
+- Update documentation for user-facing changes
 
 ## 📄 License
 
