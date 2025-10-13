@@ -15,13 +15,13 @@ test: test-unit test-integration
 test-unit:
 	@echo "Running unit tests..."
 	@$(NVIM) --headless --noplugin -u tests/minimal_init.lua \
-		-c "PlenaryBustedDirectory $(UNIT_DIR) { minimal_init = './tests/minimal_init.lua' }"
+		-c "lua require('plenary.test_harness').test_directory('$(UNIT_DIR)', { minimal_init = './tests/minimal_init.lua' })"
 
 # Run only integration tests
 test-integration:
 	@echo "Running integration tests..."
 	@$(NVIM) --headless --noplugin -u tests/minimal_init.lua \
-		-c "PlenaryBustedDirectory $(INTEGRATION_DIR) { minimal_init = './tests/minimal_init.lua' }"
+		-c "lua require('plenary.test_harness').test_directory('$(INTEGRATION_DIR)', { minimal_init = './tests/minimal_init.lua' })"
 
 # Run specific test file
 test-file:
@@ -31,13 +31,13 @@ test-file:
 	fi
 	@echo "Running $(FILE)..."
 	@$(NVIM) --headless --noplugin -u tests/minimal_init.lua \
-		-c "PlenaryBustedFile $(FILE)"
+		-c "lua require('plenary.busted').run('$(FILE)')"
 
 # Run all tests with coverage (if available)
 test-all:
 	@echo "Running all tests..."
 	@$(NVIM) --headless --noplugin -u tests/minimal_init.lua \
-		-c "PlenaryBustedDirectory $(TEST_DIR) { minimal_init = './tests/minimal_init.lua' }"
+		-c "lua require('plenary.test_harness').test_directory('$(TEST_DIR)', { minimal_init = './tests/minimal_init.lua' })"
 
 # Lint Lua files with luacheck (if installed)
 lint:
@@ -56,6 +56,14 @@ clean:
 	@find . -name "*.db-wal" -type f -delete
 	@rm -rf /tmp/nvim-test-*
 
+# Check dependencies
+check-deps:
+	@echo "Checking test dependencies..."
+	@$(NVIM) --headless -c "lua local ok = pcall(require, 'plenary'); if not ok then error('plenary.nvim not found') end; vim.cmd('quit')" 2>&1 | grep -q "not found" && \
+		echo "✗ plenary.nvim not installed" || echo "✓ plenary.nvim installed"
+	@$(NVIM) --headless -c "lua local ok = pcall(require, 'sqlite'); if not ok then error('sqlite.lua not found') end; vim.cmd('quit')" 2>&1 | grep -q "not found" && \
+		echo "✗ sqlite.lua not installed" || echo "✓ sqlite.lua installed"
+
 # Help
 help:
 	@echo "Available targets:"
@@ -64,6 +72,7 @@ help:
 	@echo "  test-integration  - Run only integration tests"
 	@echo "  test-file         - Run specific test file (FILE=path/to/test.lua)"
 	@echo "  test-all          - Run all tests with full output"
+	@echo "  check-deps        - Check if test dependencies are installed"
 	@echo "  lint              - Run luacheck linter"
 	@echo "  clean             - Clean temporary test files"
 	@echo "  help              - Show this help message"
