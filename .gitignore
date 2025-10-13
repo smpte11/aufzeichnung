@@ -1,0 +1,22 @@
+# Neovim
+*.swp
+*.swo
+*~
+
+# Lua
+luac.out
+
+# Testing
+.tests/
+test-results/
+
+# Documentation builds
+doc/tags
+
+# macOS
+.DS_Store
+
+# Task databases (user-specific)
+*.db
+*.db-shm
+*.db-wal
