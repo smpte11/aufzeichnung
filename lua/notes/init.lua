@@ -1,6 +1,6 @@
--- ⚡ COMPREHENSIVE NOTES MODULE ⚡
--- Complete notes management system with zk-nvim, task tracking, and visualization
--- Configurable directories, databases, and visualization preferences
+-- ⚡ COMPREHENSIVE TASK TRACKING MODULE ⚡
+-- Markdown task tracking system with SQLite persistence and advanced analytics
+-- Optional integration with zk-nvim for note management
 
 local plot = require('notes.plot')
 local utils = require('notes.utils')
@@ -13,9 +13,9 @@ local default_config = {
     -- 📁 Directory Configuration
     directories = {
         notebook = vim.env.ZK_NOTEBOOK_DIR or vim.fn.expand("~/notes"), -- Main notes directory
-        personal_journal = "journal/daily",                       -- Personal daily journals subdirectory
-        work_journal = "work",                                    -- Work journals subdirectory
-        archive = "archive",                                      -- Archive subdirectory
+        personal_journal = "journal/daily",                             -- Personal daily journals subdirectory
+        work_journal = "work",                                          -- Work journals subdirectory
+        archive = "archive",                                            -- Archive subdirectory
     },
 
     -- 📊 Note Type Tracking Configuration
@@ -23,19 +23,21 @@ local default_config = {
         personal = {
             enabled = true,
             filename_patterns = { "perso%-.*%.md$" }, -- Files to track for personal tasks
-            database_path = nil,             -- Auto: {notebook}/.perso-tasks.db
+            database_path = nil,                      -- Auto: {notebook}/.perso-tasks.db
         },
         work = {
             enabled = true,
             filename_patterns = { "work%-.*%.md$" }, -- Files to track for work tasks
-            database_path = nil,            -- Auto: {notebook}/.work-tasks.db
+            database_path = nil,                     -- Auto: {notebook}/.work-tasks.db
         },
     },
 
-    -- ⚙️ ZK-nvim Configuration
-    zk = {
-        enabled = true,
-        picker = "minipick", -- or "fzf", "telescope"
+    -- 🔌 Optional Integrations
+    integrations = {
+        zk = {
+            enabled = "auto",    -- "auto" = detect, true = require, false = disable
+            picker = "minipick", -- or "fzf", "telescope"
+        },
     },
 
     -- 🎨 Visualization Configuration
@@ -85,56 +87,56 @@ local default_config = {
         -- Individual keybinds can be disabled by setting to false
         mappings = {
             -- Note creation
-            new_note = "n", -- <leader>nn
-            new_at_dir = "N", -- <leader>nN
-            new_task = "T", -- <leader>nT (creates task with UUID v7)
+            new_note = "n",       -- <leader>nn
+            new_at_dir = "N",     -- <leader>nN
+            new_task = "T",       -- <leader>nT (creates task with UUID v7)
             new_child_task = "C", -- <leader>nC (creates child task)
 
             -- Journal creation
             daily_journal = "j", -- <leader>nj
-            work_journal = "w", -- <leader>nw
+            work_journal = "w",  -- <leader>nw
 
             -- Note browsing
-            open_notes = "o", -- <leader>no
-            find_notes = "f", -- <leader>nf
+            open_notes = "o",  -- <leader>no
+            find_notes = "f",  -- <leader>nf
             browse_tags = "t", -- <leader>nt
 
             -- 📊 STATS & DASHBOARDS (Enhanced!)
-            dashboard = "d", -- <leader>nd (personal dashboard)
+            dashboard = "d",       -- <leader>nd (personal dashboard)
             work_dashboard = "dw", -- <leader>ndw (work dashboard)
-            today = "dt", -- <leader>ndt (today's overview)
-            yesterday = "dy", -- <leader>ndy (yesterday's activity)
-            weekly = "dW", -- <leader>ndW (weekly overview)
-            last_week = "dl", -- <leader>ndl (last week summary)
-            friday_review = "df", -- <leader>ndf (Friday review)
-            quick_stats = "ds", -- <leader>nds (quick stats)
+            today = "dt",          -- <leader>ndt (today's overview)
+            yesterday = "dy",      -- <leader>ndy (yesterday's activity)
+            weekly = "dW",         -- <leader>ndW (weekly overview)
+            last_week = "dl",      -- <leader>ndl (last week summary)
+            friday_review = "df",  -- <leader>ndf (Friday review)
+            quick_stats = "ds",    -- <leader>nds (quick stats)
 
             -- Detailed visualization (existing)
-            task_stats = "ts", -- <leader>nts (detailed task stats)
-            task_completions = "tc", -- <leader>ntc (completion history)
-            task_states = "tp", -- <leader>ntp (task state pie chart)
+            task_stats = "ts",         -- <leader>nts (detailed task stats)
+            task_completions = "tc",   -- <leader>ntc (completion history)
+            task_states = "tp",        -- <leader>ntp (task state pie chart)
             productivity_trend = "tt", -- <leader>ntt (productivity trend)
-            recent_activity = "ta", -- <leader>nta (recent activity log)
-            work_stats = "tw", -- <leader>ntw (work-specific stats)
+            recent_activity = "ta",    -- <leader>nta (recent activity log)
+            work_stats = "tw",         -- <leader>ntw (work-specific stats)
         }
     },
 
     -- 🔔 Notification Configuration
     notifications = {
-        enabled = true,        -- Enable/disable all notifications
-        task_operations = true, -- Notify on task save/update operations
-        journal_carryover = true, -- Notify when tasks are carried over to new journals
+        enabled = true,              -- Enable/disable all notifications
+        task_operations = true,      -- Notify on task save/update operations
+        journal_carryover = true,    -- Notify when tasks are carried over to new journals
         database_operations = false, -- Notify on database creation/connection (verbose)
-        level = "info",        -- Notification level: "error", "warn", "info", "debug"
-        duration = 3000,       -- Duration in milliseconds (0 for no timeout)
-        position = "top_right", -- Position for notifications
+        level = "info",              -- Notification level: "error", "warn", "info", "debug"
+        duration = 3000,             -- Duration in milliseconds (0 for no timeout)
+        position = "top_right",      -- Position for notifications
     },
 
     -- 🔧 Advanced Configuration
     advanced = {
         auto_create_directories = true, -- Create missing directories
-        database_optimization = true, -- Use WAL mode, caching, etc.
-        debug_mode = false,       -- Verbose logging
+        database_optimization = true,   -- Use WAL mode, caching, etc.
+        debug_mode = false,             -- Verbose logging
     }
 }
 
@@ -239,15 +241,29 @@ function M.setup(user_config)
     -- Merge configuration
     config = deep_merge(default_config, user_config or {})
 
+    -- Backward compatibility: migrate old config.zk to config.integrations.zk
+    if user_config and user_config.zk then
+        if not config.integrations then
+            config.integrations = {}
+        end
+        if not config.integrations.zk then
+            config.integrations.zk = {}
+        end
+        -- Merge old zk config into integrations.zk
+        for k, v in pairs(user_config.zk) do
+            if config.integrations.zk[k] == nil then
+                config.integrations.zk[k] = v
+            end
+        end
+    end
+
     -- Expand and validate directories
     M._setup_directories()
 
-    -- Set up zk-nvim if enabled
-    if config.zk.enabled then
-        M._setup_zk()
-    end
+    -- Set up optional zk-nvim integration
+    M._setup_zk_integration()
 
-    -- Set up task tracking if enabled
+    -- Set up task tracking (core functionality)
     M._setup_task_tracking()
 
     -- Set up commands
@@ -261,9 +277,10 @@ function M.setup(user_config)
     is_setup = true
 
     if config.advanced.debug_mode then
-        print("✅ Notes module setup complete!")
+        print("✅ Task tracking module setup complete!")
         print("📁 Notebook directory:", config.directories.notebook)
         print("📊 Tracking enabled for:", vim.tbl_keys(config.tracking))
+        print("🔌 zk-nvim integration:", M.zk_integration and "enabled" or "disabled")
     end
 
     return config
@@ -333,61 +350,44 @@ function M._setup_directories()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 📝 ZK-NVIM SETUP
+-- 🔌 ZK-NVIM INTEGRATION SETUP (OPTIONAL)
 -- ═══════════════════════════════════════════════════════════════════════
 
-function M._setup_zk()
-    -- Load zk-nvim
-    local ok, zk = pcall(require, "zk")
-    if not ok then
-        vim.notify("zk-nvim not available, note management disabled", vim.log.levels.WARN)
-        config.zk.enabled = false
+function M._setup_zk_integration()
+    -- Handle "auto" mode - check if zk-nvim is available
+    if config.integrations.zk.enabled == "auto" then
+        local ok, _ = pcall(require, "zk")
+        config.integrations.zk.enabled = ok
+    end
+
+    -- If explicitly disabled, skip
+    if config.integrations.zk.enabled == false then
+        M.zk_integration = nil
         return
     end
 
-    -- Basic zk setup
-    local zk_config = {
-        picker = config.zk.picker,
-        lsp = {
-            config = {
-                cmd = { "zk", "lsp" },
-                name = "zk",
-                on_attach = function(_, bufnr)
-                    M._setup_buffer_keymaps(bufnr)
-                end,
-            }
-        }
-    }
-
-    -- Merge any additional zk config
-    for k, v in pairs(config.zk) do
-        if k ~= "enabled" and k ~= "picker" then
-            zk_config[k] = v
+    -- Try to load zk integration
+    local ok, zk_integration = pcall(require, "notes.integrations.zk")
+    if not ok then
+        if config.integrations.zk.enabled == true then
+            -- User explicitly required zk, so error
+            error("zk-nvim integration enabled but module not available")
         end
+        M.zk_integration = nil
+        return
     end
 
-    zk.setup(zk_config)
-
-    -- Store zk reference for commands
-    M.zk = zk
-end
-
--- Set up buffer-specific keymaps for zk buffers
-function M._setup_buffer_keymaps(bufnr)
-    local function map(mode, lhs, rhs, opts)
-        vim.keymap.set(mode, lhs, rhs, vim.tbl_extend("force", { buffer = bufnr }, opts or {}))
+    -- Set up integration
+    local success = zk_integration.setup(config, M)
+    if success then
+        M.zk_integration = zk_integration
+        M.zk = zk_integration.zk -- For backward compatibility
+    else
+        if config.integrations.zk.enabled == true then
+            vim.notify("zk-nvim required but not available", vim.log.levels.ERROR)
+        end
+        M.zk_integration = nil
     end
-
-    local opts = { noremap = true, silent = false }
-
-    -- Selection-based note creation
-    map("v", config.keymaps.prefix .. config.keymaps.mappings.new_note .. "t",
-        ":'<,'>ZkNewFromTitleSelection<CR>",
-        vim.tbl_extend("force", opts, { desc = "Create note from title selection" }))
-
-    map("v", config.keymaps.prefix .. config.keymaps.mappings.new_note .. "c",
-        ":'<,'>ZkNewFromContentSelection { title = vim.fn.input('Title: ') }<CR>",
-        vim.tbl_extend("force", opts, { desc = "Create note from content selection" }))
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -413,10 +413,10 @@ function M._setup_task_tracking()
                 -- Convert Lua pattern to glob pattern
                 -- "perso%-.*%.md$" -> "perso-*.md"
                 local glob_pattern = lua_pattern
-                    :gsub("%%%-", "-") -- %-  -> -
-                    :gsub("%.%*", "*") -- .* -> *
+                    :gsub("%%%-", "-")       -- %-  -> -
+                    :gsub("%.%*", "*")       -- .* -> *
                     :gsub("%%%.md%$", ".md") -- %.md$ -> .md
-                    :gsub("%$", "") -- Remove end anchor
+                    :gsub("%$", "")          -- Remove end anchor
                 table.insert(patterns, "*/" .. glob_pattern)
             end
         end
@@ -688,7 +688,7 @@ function M._track_tasks_on_save(bufnr)
     for _, task in ipairs(tasks) do
         -- Check if task exists and get last known state
         local existing = db:eval(
-        "SELECT COUNT(*) as count, state, task_text FROM task_events WHERE task_id = ? ORDER BY timestamp DESC LIMIT 1",
+            "SELECT COUNT(*) as count, state, task_text FROM task_events WHERE task_id = ? ORDER BY timestamp DESC LIMIT 1",
             { task.uuid })
 
         if not existing or #existing == 0 or existing[1].count == 0 then
@@ -1039,10 +1039,10 @@ function M._show_parent_task_picker(callback)
         window = {
             config = function()
                 local height = math.min(6, #items + 2) -- Compact but readable
-                local width = 45           -- Enough for truncated UUID + task text
+                local width = 45                       -- Enough for truncated UUID + task text
                 -- Calculate position for truly bottom-left
                 local has_tabline = vim.o.showtabline == 2 or
-                (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)
+                    (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)
                 local has_statusline = vim.o.laststatus > 0
                 local max_height = vim.o.lines - vim.o.cmdheight - (has_tabline and 1 or 0) - (has_statusline and 1 or 0)
 
@@ -1052,7 +1052,7 @@ function M._show_parent_task_picker(callback)
                     height = height,
                     width = width,
                     row = max_height + (has_tabline and 1 or 0), -- At bottom
-                    col = 0,                      -- At left edge
+                    col = 0,                                     -- At left edge
                     border = Utils.ui.border,
                     style = "minimal"
                 }
@@ -1066,72 +1066,29 @@ end
 -- ═══════════════════════════════════════════════════════════════════════
 
 function M._setup_commands()
-    -- Only set up commands if zk is available
-    if not M.zk then
-        return
-    end
+    -- ═══════════════════════════════════════════════════════════════════
+    -- TASK COMMANDS (Always Available - No Dependencies)
+    -- ═══════════════════════════════════════════════════════════════════
 
-    local commands = require("zk.commands")
-
-    -- Note creation commands
-    commands.add("ZkNewAtDir", function(options)
-        -- Directory picker implementation (simplified)
-        local dir = vim.fn.input("Directory: ", config.directories.notebook)
-        if dir == "" then return end
-
-        local title = vim.fn.input("Title: ")
-        if title == "" then return end
-
-        M.zk.new({ dir = dir, title = title })
-    end)
-
-    -- Journal commands
-    commands.add("ZkNewDailyJournal", function(options)
-        local dir = vim.fn.input("Journal directory: ", config.directories.personal_journal)
-        if dir == "" then return end
-
-        local journal_config = config.journal.daily_template.personal
-        local date = os.date("%Y-%m-%d")
-        local title = journal_config.prefix .. "-" .. date
-        local target_dir = config.directories.notebook .. "/" .. dir
-        local content = M._create_journal_content_with_carryover(target_dir, "personal")
-
-        M.zk.new({ dir = dir, title = title, content = content })
-    end)
-
-    commands.add("ZkNewWorkJournal", function(options)
-        local dir = vim.fn.input("Work journal directory: ", config.directories.work_journal)
-        if dir == "" then return end
-
-        local journal_config = config.journal.daily_template.work
-        local date = os.date("%Y-%m-%d")
-        local title = journal_config.prefix .. "-" .. date
-        local target_dir = config.directories.notebook .. "/" .. dir
-        local content = M._create_journal_content_with_carryover(target_dir, "work")
-
-        M.zk.new({ dir = dir, title = title, content = content })
-    end)
-
-    -- Task creation
-    commands.add("ZkNewTask", function(options)
+    -- Task creation (standalone, no zk required)
+    vim.api.nvim_create_user_command("NotesNewTask", function(opts)
         local uuid = M._generate_uuid()
-        local parent_uuid = options and options.args
+        local parent_uuid = opts.args ~= "" and opts.args or nil
 
         local task_uri = "task://" .. uuid
-        if parent_uuid and parent_uuid ~= "" then
+        if parent_uuid then
             task_uri = task_uri .. "?parent=" .. parent_uuid
         end
 
         local task_line = string.format("- [ ]  [ ](%s)", task_uri)
         local current_line = vim.api.nvim_win_get_cursor(0)[1]
         vim.api.nvim_buf_set_lines(0, current_line, current_line, false, { task_line })
-        -- Position cursor right after "- [ ] " (position 6) where task text should go
         vim.api.nvim_win_set_cursor(0, { current_line + 1, 6 })
         vim.cmd("startinsert")
-    end)
+    end, { nargs = "?", desc = "Create new task with UUID" })
 
-    -- Child task creation - creates a task under a parent
-    commands.add("ZkNewChildTask", function()
+    -- Child task creation with parent picker
+    vim.api.nvim_create_user_command("NotesNewChildTask", function()
         M._show_parent_task_picker(function(parent_uuid)
             if not parent_uuid then return end
 
@@ -1149,7 +1106,7 @@ function M._setup_commands()
 
             -- Get the parent task line to determine indentation
             local parent_line = vim.api.nvim_buf_get_lines(target_buf, current_line_num - 1, current_line_num, false)[1] or
-            ""
+                ""
 
             -- Extract existing indentation from parent line
             local parent_indent = parent_line:match("^(%s*)") or ""
@@ -1172,11 +1129,11 @@ function M._setup_commands()
             vim.api.nvim_set_current_win(target_win)
             vim.cmd("startinsert")
         end)
-    end)
+    end, { desc = "Create child task under a parent" })
 
-    -- Show task hierarchy
-    commands.add("ZkTaskHierarchy", function(options)
-        local args = options and options.args or ""
+    -- Task hierarchy visualization
+    vim.api.nvim_create_user_command("NotesTaskHierarchy", function(opts)
+        local args = opts.args
         local parts = vim.split(args, " ", { trimempty = true })
         local track_type = parts[1] or "personal"
         local root_uuid = parts[2]
@@ -1190,110 +1147,91 @@ function M._setup_commands()
         end
 
         M.show_task_hierarchy(track_type, root_uuid)
-    end)
+    end, { nargs = "*", desc = "Show task hierarchy tree" })
 
-    -- Visualization commands (only if visualization is enabled)
+    -- ═══════════════════════════════════════════════════════════════════
+    -- VISUALIZATION & DASHBOARD COMMANDS (No Dependencies)
+    -- ═══════════════════════════════════════════════════════════════════
+
     if config.visualization.enabled then
-        commands.add("ZkTaskStats", function(options)
-            local track_type = (options and options.args) or "personal"
+        -- Dashboard commands
+        vim.api.nvim_create_user_command("NotesDashboard", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
             M.dashboard(track_type)
-        end)
+        end, { nargs = "?", desc = "Show task dashboard" })
 
-        commands.add("ZkTaskCompletions", function(options)
-            local days = tonumber((options and options.args) or "7")
-            M.daily_completions("personal", days)
-        end)
+        vim.api.nvim_create_user_command("NotesToday", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
+            M.today_dashboard(track_type)
+        end, { nargs = "?", desc = "Today's focus dashboard" })
 
-        commands.add("ZkWorkStats", function()
-            M.dashboard("work")
-        end)
+        vim.api.nvim_create_user_command("NotesYesterday", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
+            M.previous_day_dashboard(track_type)
+        end, { nargs = "?", desc = "Previous working day review" })
 
-        commands.add("ZkTaskStates", function(options)
-            local track_type = (options and options.args) or "personal"
+        vim.api.nvim_create_user_command("NotesWeekly", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
+            M.weekly_dashboard(track_type)
+        end, { nargs = "?", desc = "Weekly productivity dashboard" })
+
+        vim.api.nvim_create_user_command("NotesLastWeek", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
+            print("📊 Last Week's Productivity (" .. track_type .. ")")
+            M.productivity_trend(track_type, 7)
+            print("\n" .. string.rep("═", 60))
+            M.daily_completions(track_type, 7)
+        end, { nargs = "?", desc = "Last week summary" })
+
+        vim.api.nvim_create_user_command("NotesReview", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
+            M.full_review_dashboard(track_type)
+        end, { nargs = "?", desc = "Comprehensive productivity review" })
+
+        -- Stats commands
+        vim.api.nvim_create_user_command("NotesStats", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
             M.task_states(track_type)
-        end)
+            M.recent_activity(track_type)
+        end, { nargs = "?", desc = "Quick task statistics" })
 
-        commands.add("ZkTaskTrend", function(options)
-            local days = tonumber((options and options.args) or "14")
+        vim.api.nvim_create_user_command("NotesCompletions", function(opts)
+            local days = tonumber(opts.args) or 7
+            M.daily_completions("personal", days)
+        end, { nargs = "?", desc = "Daily task completions" })
+
+        vim.api.nvim_create_user_command("NotesStates", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
+            M.task_states(track_type)
+        end, { nargs = "?", desc = "Task state distribution" })
+
+        vim.api.nvim_create_user_command("NotesTrend", function(opts)
+            local days = tonumber(opts.args) or 14
             M.productivity_trend("personal", days)
-        end)
+        end, { nargs = "?", desc = "Productivity trend" })
 
-        commands.add("ZkTaskActivity", function()
-            M.recent_activity("personal")
-        end)
+        vim.api.nvim_create_user_command("NotesActivity", function(opts)
+            local track_type = opts.args ~= "" and opts.args or "personal"
+            M.recent_activity(track_type)
+        end, { nargs = "?", desc = "Recent activity log" })
     end
 
-    -- Help and utility commands
-    commands.add("ZkNotesHelp", function()
+    -- Help commands
+    vim.api.nvim_create_user_command("NotesHelp", function()
         M.help()
-    end)
+    end, { desc = "Show notes module help" })
 
-    commands.add("ZkNotesHealth", function()
+    vim.api.nvim_create_user_command("NotesHealth", function()
         M.health()
-    end)
+    end, { desc = "System health check" })
 
-    commands.add("ZkNotesConfig", function()
-        M.config()
-    end)
+    -- ═══════════════════════════════════════════════════════════════════
+    -- ZK INTEGRATION COMMANDS (Conditional - Only if zk-nvim available)
+    -- ═══════════════════════════════════════════════════════════════════
 
-    commands.add("ZkNotesExamples", function()
-        M.examples()
-    end)
-
-    -- ═══════════════════════════════════════════════════════════════════════
-    -- 📊 STATS & DASHBOARD COMMANDS (Perfect for mini.starter!)
-    -- ═══════════════════════════════════════════════════════════════════════
-
-    -- Quick dashboard commands
-    commands.add("ZkDashboard", function(options)
-        local track_type = (options and options.args) or "personal"
-        M.dashboard(track_type)
-    end, { nargs = "?", desc = "Show notes dashboard for track type" })
-
-    commands.add("ZkPersonalDashboard", function()
-        M.dashboard("personal")
-    end, { desc = "Show personal notes dashboard" })
-
-    commands.add("ZkWorkDashboard", function()
-        M.dashboard("work")
-    end, { desc = "Show work notes dashboard" })
-
-    -- Specialized dashboard commands
-    commands.add("ZkToday", function(options)
-        local track_type = (options and options.args) or "personal"
-        M.today_dashboard(track_type)
-    end, { nargs = "?", desc = "Today's focus dashboard with hourly insights" })
-
-    commands.add("ZkYesterday", function(options)
-        local track_type = (options and options.args) or "personal"
-        M.previous_day_dashboard(track_type)
-    end, { nargs = "?", desc = "Smart previous working day review" })
-
-    commands.add("ZkWeekly", function(options)
-        local track_type = (options and options.args) or "personal"
-        M.weekly_dashboard(track_type)
-    end, { nargs = "?", desc = "Weekly productivity trends and day patterns" })
-
-    commands.add("ZkLastWeek", function(options)
-        local track_type = (options and options.args) or "personal"
-        print("📊 Last Week's Productivity (" .. track_type .. ")")
-        M.productivity_trend(7, track_type) -- Last 7 days
-        print("\n" .. string.rep("═", 60))
-        M.daily_completions(7, track_type) -- Last 7 days completions
-    end, { nargs = "?", desc = "Show last week's productivity summary" })
-
-    -- Friday review special command
-    commands.add("ZkFridayReview", function()
-        M.friday_dashboard("combined")
-    end, { desc = "Complete Friday review with achievements and insights" })
-
-    -- Quick stats commands
-    commands.add("ZkQuickStats", function(options)
-        local track_type = (options and options.args) or "personal"
-        print("⚡ Quick Stats (" .. track_type .. ")")
-        M.task_states(track_type)
-        M.recent_activity(track_type)
-    end, { nargs = "?", desc = "Show quick task statistics" })
+    if M.zk_integration and M.zk_integration.is_available then
+        M.zk_integration._register_commands(config)
+    end
 end
 
 -- UUID v7 generation (time-ordered, replaces old UUID v4)
@@ -1447,148 +1385,113 @@ function M._setup_keymaps()
     local mappings = config.keymaps.mappings or {}
     local opts = { noremap = true, silent = false }
 
-    -- Note creation
-    if mappings.new_note then
-        vim.keymap.set("n", prefix .. mappings.new_note,
-            "<Cmd>ZkNew { title = vim.fn.input('Title: ') }<CR>",
-            vim.tbl_extend("force", opts, { desc = "New note" }))
-    end
-
-    if mappings.new_at_dir then
-        vim.keymap.set("n", prefix .. mappings.new_at_dir,
-            "<Cmd>ZkNewAtDir<CR>",
-            vim.tbl_extend("force", opts, { desc = "New note at directory" }))
-    end
+    -- ═══════════════════════════════════════════════════════════════════
+    -- TASK KEYMAPS (Always Available)
+    -- ═══════════════════════════════════════════════════════════════════
 
     if mappings.new_task then
         vim.keymap.set("n", prefix .. mappings.new_task,
-            "<Cmd>ZkNewTask<CR>",
-            vim.tbl_extend("force", opts, { desc = "New task" }))
+            "<Cmd>NotesNewTask<CR>",
+            vim.tbl_extend("force", opts, { desc = "New task with UUID" }))
     end
 
     if mappings.new_child_task then
         vim.keymap.set("n", prefix .. mappings.new_child_task,
-            "<Cmd>ZkNewChildTask<CR>",
+            "<Cmd>NotesNewChildTask<CR>",
             vim.tbl_extend("force", opts, { desc = "New child task" }))
     end
 
+    -- ═══════════════════════════════════════════════════════════════════
+    -- VISUALIZATION KEYMAPS (Always Available if visualization enabled)
+    -- ═══════════════════════════════════════════════════════════════════
 
-    -- Journal creation
-    if mappings.daily_journal then
-        vim.keymap.set("n", prefix .. mappings.daily_journal,
-            "<Cmd>ZkNewDailyJournal<CR>",
-            vim.tbl_extend("force", opts, { desc = "New daily journal" }))
-    end
-
-    if mappings.work_journal then
-        vim.keymap.set("n", prefix .. mappings.work_journal,
-            "<Cmd>ZkNewWorkJournal<CR>",
-            vim.tbl_extend("force", opts, { desc = "New work journal" }))
-    end
-
-    -- Note browsing
-    if mappings.open_notes then
-        vim.keymap.set("n", prefix .. mappings.open_notes,
-            "<Cmd>ZkNotes { sort = { 'modified' } }<CR>",
-            vim.tbl_extend("force", opts, { desc = "Open notes" }))
-    end
-
-    if mappings.find_notes then
-        vim.keymap.set("n", prefix .. mappings.find_notes,
-            "<Cmd>ZkNotes { sort = { 'modified' }, match = { vim.fn.input('Search: ') } }<CR>",
-            vim.tbl_extend("force", opts, { desc = "Find notes" }))
-    end
-
-    if mappings.browse_tags then
-        vim.keymap.set("n", prefix .. mappings.browse_tags,
-            "<Cmd>ZkTags<CR>",
-            vim.tbl_extend("force", opts, { desc = "Browse tags" }))
-    end
-
-    -- Visualization keymaps (only if enabled)
     if config.visualization.enabled then
-        -- 📊 Stats & Dashboards (Quick Access!)
         if mappings.dashboard then
             vim.keymap.set("n", prefix .. mappings.dashboard,
-                "<Cmd>ZkPersonalDashboard<CR>",
-                vim.tbl_extend("force", opts, { desc = "Personal dashboard" }))
+                "<Cmd>NotesDashboard<CR>",
+                vim.tbl_extend("force", opts, { desc = "Task dashboard" }))
         end
 
         if mappings.work_dashboard then
             vim.keymap.set("n", prefix .. mappings.work_dashboard,
-                "<Cmd>ZkWorkDashboard<CR>",
+                "<Cmd>NotesDashboard work<CR>",
                 vim.tbl_extend("force", opts, { desc = "Work dashboard" }))
         end
 
         if mappings.today then
             vim.keymap.set("n", prefix .. mappings.today,
-                "<Cmd>ZkToday<CR>",
+                "<Cmd>NotesToday<CR>",
                 vim.tbl_extend("force", opts, { desc = "Today's overview" }))
         end
 
         if mappings.yesterday then
             vim.keymap.set("n", prefix .. mappings.yesterday,
-                "<Cmd>ZkYesterday<CR>",
+                "<Cmd>NotesYesterday<CR>",
                 vim.tbl_extend("force", opts, { desc = "Yesterday's activity" }))
         end
 
         if mappings.weekly then
             vim.keymap.set("n", prefix .. mappings.weekly,
-                "<Cmd>ZkWeekly<CR>",
+                "<Cmd>NotesWeekly<CR>",
                 vim.tbl_extend("force", opts, { desc = "Weekly overview" }))
         end
 
         if mappings.last_week then
             vim.keymap.set("n", prefix .. mappings.last_week,
-                "<Cmd>ZkLastWeek<CR>",
+                "<Cmd>NotesLastWeek<CR>",
                 vim.tbl_extend("force", opts, { desc = "Last week summary" }))
         end
 
         if mappings.friday_review then
             vim.keymap.set("n", prefix .. mappings.friday_review,
-                "<Cmd>ZkFridayReview<CR>",
-                vim.tbl_extend("force", opts, { desc = "Friday weekly review" }))
+                "<Cmd>NotesReview<CR>",
+                vim.tbl_extend("force", opts, { desc = "Comprehensive review" }))
         end
 
         if mappings.quick_stats then
             vim.keymap.set("n", prefix .. mappings.quick_stats,
-                "<Cmd>ZkQuickStats<CR>",
+                "<Cmd>NotesStats<CR>",
                 vim.tbl_extend("force", opts, { desc = "Quick task statistics" }))
         end
 
-        -- Detailed Visualization (existing enhanced)
         if mappings.task_stats then
             vim.keymap.set("n", prefix .. mappings.task_stats,
-                "<Cmd>ZkTaskStats<CR>",
+                "<Cmd>NotesDashboard<CR>",
                 vim.tbl_extend("force", opts, { desc = "Detailed task statistics" }))
         end
 
         if mappings.task_completions then
             vim.keymap.set("n", prefix .. mappings.task_completions,
-                "<Cmd>ZkTaskCompletions<CR>",
+                "<Cmd>NotesCompletions<CR>",
                 vim.tbl_extend("force", opts, { desc = "Task completions" }))
         end
 
         if mappings.work_stats then
             vim.keymap.set("n", prefix .. mappings.work_stats,
-                "<Cmd>ZkWorkStats<CR>",
+                "<Cmd>NotesDashboard work<CR>",
                 vim.tbl_extend("force", opts, { desc = "Work task statistics" }))
         end
-
-        -- Add more visualization keymaps...
     end
 
-    -- Help system keymaps
-    if mappings.help == nil or mappings.help then -- Default enabled unless explicitly disabled
+    -- Help keymaps (always available)
+    if mappings.help == nil or mappings.help then
         vim.keymap.set("n", prefix .. "?",
-            "<Cmd>ZkNotesHelp<CR>",
+            "<Cmd>NotesHelp<CR>",
             vim.tbl_extend("force", opts, { desc = "📖 Notes help" }))
     end
 
-    if mappings.health == nil or mappings.health then -- Default enabled unless explicitly disabled
+    if mappings.health == nil or mappings.health then
         vim.keymap.set("n", prefix .. "h",
-            "<Cmd>ZkNotesHealth<CR>",
+            "<Cmd>NotesHealth<CR>",
             vim.tbl_extend("force", opts, { desc = "🏥 System health" }))
+    end
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- ZK INTEGRATION KEYMAPS (Only if zk-nvim available)
+    -- ═══════════════════════════════════════════════════════════════════
+
+    if M.zk_integration and M.zk_integration.is_available then
+        M.zk_integration.setup_keymaps(config)
     end
 end
 
@@ -2463,10 +2366,10 @@ function M._get_smart_previous_day_data(track_type)
 
     if track_type == "work" then
         -- For work, skip weekends intelligently
-        if current_dow == 1 then      -- Monday
-            days_to_check = { 3 }     -- Check Friday (3 days ago)
-        elseif current_dow == 0 then  -- Sunday
-            days_to_check = { 2 }     -- Check Friday (2 days ago)
+        if current_dow == 1 then                 -- Monday
+            days_to_check = { 3 }                -- Check Friday (3 days ago)
+        elseif current_dow == 0 then             -- Sunday
+            days_to_check = { 2 }                -- Check Friday (2 days ago)
         else
             days_to_check = { 1, 3, 4, 5, 6, 7 } -- Yesterday, then check back further on weekdays
         end
