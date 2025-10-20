@@ -713,12 +713,16 @@ function M._track_tasks_on_save(bufnr)
         end
     end
 
-    -- Process tasks (simplified - just save new/changed tasks)
+    -- Process tasks (with deduplication to prevent duplicate events)
     for _, task in ipairs(tasks) do
-        -- Check if task exists and get last known state
-        local existing = db:eval(
-            "SELECT COUNT(*) as count, state, task_text FROM task_events WHERE task_id = ? ORDER BY timestamp DESC LIMIT 1",
-            { task.uuid })
+        -- Check if task exists and get last known state, event_type, and timestamp
+        local existing = db:eval([[
+            SELECT COUNT(*) as count, state, task_text, event_type, timestamp 
+            FROM task_events 
+            WHERE task_id = ? 
+            ORDER BY timestamp DESC 
+            LIMIT 1
+        ]], { task.uuid })
 
         if not existing or #existing == 0 or existing[1].count == 0 then
             -- New task
@@ -728,33 +732,78 @@ function M._track_tasks_on_save(bufnr)
 			]], { task.uuid, "task_created", os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, task.parent_uuid })
             new_tasks = new_tasks + 1
         else
-            -- Check if state or text changed
+            -- Get last event details
             local last_state = existing[1].state
             local last_text = existing[1].task_text
+            local last_event_type = existing[1].event_type
+            local last_timestamp = existing[1].timestamp
 
-            -- Normalize for comparison (trim whitespace)
-            local current_text = task.text:gsub("^%s+", ""):gsub("%s+$", "")
-            local stored_text = (last_text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            -- Improved text normalization: trim whitespace, normalize multiple spaces, remove extra newlines
+            local function normalize_text(text)
+                if not text then return "" end
+                return text
+                    :gsub("^%s+", "")      -- trim leading whitespace
+                    :gsub("%s+$", "")      -- trim trailing whitespace
+                    :gsub("%s+", " ")      -- normalize multiple spaces to single space
+                    :gsub("\n+", " ")      -- replace newlines with space
+            end
+
+            local current_text_normalized = normalize_text(task.text)
+            local stored_text_normalized = normalize_text(last_text)
 
             local state_changed = last_state ~= task.state
-            local text_changed = stored_text ~= current_text
+            local text_changed = stored_text_normalized ~= current_text_normalized
 
-            if state_changed or text_changed then
-                local event_type = "task_updated"
-                if task.state == "FINISHED" and last_state ~= "FINISHED" then
-                    event_type = "task_completed"
-                    completed_tasks = completed_tasks + 1
-                elseif task.state ~= "FINISHED" and last_state == "FINISHED" then
-                    event_type = "task_reopened"
-                end
-
-                db:eval([[
-					INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id)
-					VALUES (?, ?, ?, ?, ?, ?, ?)
-				]], { task.uuid, event_type, os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, task.parent_uuid })
-                updated_tasks = updated_tasks + 1
+            -- Skip if nothing has changed at all
+            if not state_changed and not text_changed then
+                goto continue
             end
+            
+            -- Check if we recently recorded this exact state+text combination
+            -- This prevents duplicate events when the DB has stale data
+            local recent_exact_match = db:eval([[
+                SELECT COUNT(*) as count
+                FROM task_events 
+                WHERE task_id = ? 
+                  AND state = ?
+                  AND task_text = ?
+                  AND timestamp > datetime('now', '-5 minutes')
+                ORDER BY timestamp DESC 
+                LIMIT 1
+            ]], { task.uuid, task.state, task.text })
+            
+            if recent_exact_match and #recent_exact_match > 0 and recent_exact_match[1].count > 0 then
+                -- We already recorded this exact state+text recently, skip
+                goto continue
+            end
+
+            -- Determine event type
+            local event_type = "task_updated"
+            local should_count_as_completed = false
+            
+            if task.state == "FINISHED" and last_state ~= "FINISHED" then
+                event_type = "task_completed"
+                should_count_as_completed = true
+            elseif task.state ~= "FINISHED" and last_state == "FINISHED" then
+                event_type = "task_reopened"
+            elseif task.state == "IN_PROGRESS" and last_state ~= "IN_PROGRESS" then
+                event_type = "task_updated"
+            end
+
+            -- Only record if this represents a genuine change
+            db:eval([[
+                INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ]], { task.uuid, event_type, os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, task.parent_uuid })
+                
+            -- Count for notification
+            if should_count_as_completed then
+                completed_tasks = completed_tasks + 1
+            end
+            updated_tasks = updated_tasks + 1
         end
+        
+        ::continue::
     end
 
     -- Show summary notification
