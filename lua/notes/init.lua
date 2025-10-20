@@ -4,6 +4,7 @@
 
 local plot = require('notes.plot')
 local utils = require('notes.utils')
+local icons = require('notes.icons')
 
 local M = {}
 
@@ -54,7 +55,10 @@ local default_config = {
             truncate_length = 30,
             productivity_weights = { created = 1, completed = 2, carried_over = -1 }
         },
-        display = { use_emojis = true, show_debug = false }
+        display = {
+            icon_style = "nerd_font", -- Options: "nerd_font", "unicode", "none"
+            show_debug = false
+        }
     },
 
     -- 📝 Journal Configuration
@@ -63,17 +67,31 @@ local default_config = {
             personal = {
                 prefix = "perso",
                 sections = {
-                    "What is my main goal for today?",
-                    "What else do I wanna do?",
-                    "What did I do today?"
+                    "Today's Focus",
+                    "Tasks & To-Dos",
+                    "Notes & Ideas",
+                    "Daily Reflection"
+                },
+                section_icons = {
+                    "focus",
+                    "tasks",
+                    "ideas",
+                    "reflection"
                 }
             },
             work = {
                 prefix = "work",
                 sections = {
-                    "What is my main goal for today?",
-                    "What else do I wanna do?",
-                    "What did I do today?"
+                    "Daily Sprint Goal",
+                    "Action Items",
+                    "Team & Meetings",
+                    "Progress & Learnings"
+                },
+                section_icons = {
+                    "sprint",
+                    "action",
+                    "team",
+                    "progress"
                 }
             }
         },
@@ -186,13 +204,15 @@ local function notify(message, level, category)
         end
 
         -- Add title for better context
-        notify_opts.title = "📝 Notes"
+        notify_opts.title = icons.get_with_space("note") .. "Notes"
 
         vim.notify(message, vim_level, notify_opts)
     else
         -- Fallback for basic vim
-        local prefix = level == "error" and "❌" or level == "warn" and "⚠️" or "✅"
-        print(prefix .. " Notes: " .. message)
+        local prefix = level == "error" and icons.get("error") or level == "warn" and icons.get("warning") or
+            icons.get("check")
+        if prefix ~= "" then prefix = prefix .. " " end
+        print(prefix .. "Notes: " .. message)
     end
 end
 
@@ -260,6 +280,11 @@ function M.setup(user_config)
     -- Expand and validate directories
     M._setup_directories()
 
+    -- Initialize icon system with user's icon_style preference
+    if config.visualization and config.visualization.display then
+        icons.setup({ icon_style = config.visualization.display.icon_style or "nerd_font" })
+    end
+
     -- Set up optional zk-nvim integration
     M._setup_zk_integration()
 
@@ -277,10 +302,10 @@ function M.setup(user_config)
     is_setup = true
 
     if config.advanced.debug_mode then
-        print("✅ Task tracking module setup complete!")
-        print("📁 Notebook directory:", config.directories.notebook)
-        print("📊 Tracking enabled for:", vim.tbl_keys(config.tracking))
-        print("🔌 zk-nvim integration:", M.zk_integration and "enabled" or "disabled")
+        print(icons.get_with_space("check") .. "Task tracking module setup complete!")
+        print(icons.get_with_space("folder") .. "Notebook directory:", config.directories.notebook)
+        print(icons.get_with_space("stats") .. "Tracking enabled for:", vim.tbl_keys(config.tracking))
+        print(icons.get_with_space("link") .. "zk-nvim integration:", M.zk_integration and "enabled" or "disabled")
     end
 
     return config
@@ -333,7 +358,9 @@ function M._setup_directories()
 
         -- Notify about created directories
         if #created_dirs > 0 then
-            notify(string.format("📁 Created directories: %s", table.concat(created_dirs, ", ")), "info",
+            notify(
+                string.format("%sCreated directories: %s", icons.get_with_space("folder"),
+                    table.concat(created_dirs, ", ")), "info",
                 "database_operations")
         end
     end
@@ -489,9 +516,11 @@ function M._run_database_migrations(db)
         end)
 
         if success then
-            notify("✅ Database migration completed: parent_id column and index added", "info", "database_operations")
+            notify(icons.get_with_space("check") .. "Database migration completed: parent_id column and index added",
+                "info", "database_operations")
         else
-            notify(string.format("❌ Database migration failed: %s", tostring(err)), "error", "database_operations")
+            notify(string.format("%sDatabase migration failed: %s", icons.get_with_space("error"), tostring(err)),
+                "error", "database_operations")
         end
     end
 
@@ -734,13 +763,15 @@ function M._track_tasks_on_save(bufnr)
         local messages = {}
 
         if new_tasks > 0 then
-            table.insert(messages, string.format("📝 %d new task%s", new_tasks, new_tasks == 1 and "" or "s"))
+            table.insert(messages,
+                string.format("%s%d new task%s", icons.get_with_space("note"), new_tasks, new_tasks == 1 and "" or "s"))
         end
         if completed_tasks > 0 then
-            table.insert(messages, string.format("✅ %d completed", completed_tasks))
+            table.insert(messages, string.format("%s%d completed", icons.get_with_space("check"), completed_tasks))
         end
         if updated_tasks > 0 and completed_tasks ~= updated_tasks then
-            table.insert(messages, string.format("🔄 %d updated", updated_tasks - completed_tasks))
+            table.insert(messages,
+                string.format("%s%d updated", icons.get_with_space("save"), updated_tasks - completed_tasks))
         end
 
         local summary = table.concat(messages, ", ")
@@ -815,6 +846,34 @@ function M._create_journal_helpers()
     return helpers
 end
 
+-- Generate journal sections with icons
+-- @param journal_config: template configuration
+-- @param section_tasks: optional table mapping section names to task arrays
+-- @return: string with formatted journal content
+local function generate_journal_sections(journal_config, section_tasks)
+    local content_parts = {}
+
+    for i, section in ipairs(journal_config.sections) do
+        -- Get icon for this section if available
+        local section_icon = ""
+        if journal_config.section_icons and journal_config.section_icons[i] then
+            section_icon = icons.get_with_space(journal_config.section_icons[i])
+        end
+
+        table.insert(content_parts, "## " .. section_icon .. section)
+
+        -- Add tasks if available
+        if section_tasks and section_tasks[section] and #section_tasks[section] > 0 then
+            table.insert(content_parts, table.concat(section_tasks[section], "\n"))
+            table.insert(content_parts, "")
+        else
+            table.insert(content_parts, "")
+        end
+    end
+
+    return table.concat(content_parts, "\n")
+end
+
 function M._create_journal_content_with_carryover(target_dir, journal_type)
     if not config.journal.carryover_enabled then
         return M._create_basic_journal_content(journal_type)
@@ -851,21 +910,8 @@ function M._create_journal_content_with_carryover(target_dir, journal_type)
             prev_filename), "info", "journal_carryover")
     end
 
-    -- Generate only body content - ZK handles frontmatter via ~/.config/zk templates
-    local content_parts = {}
-
-    for _, section in ipairs(journal_config.sections) do
-        table.insert(content_parts, "## " .. section)
-        local tasks = section_tasks[section]
-        if tasks and #tasks > 0 then
-            table.insert(content_parts, table.concat(tasks, "\n"))
-            table.insert(content_parts, "")
-        else
-            table.insert(content_parts, "")
-        end
-    end
-
-    return table.concat(content_parts, "\n")
+    -- Generate journal content with carried over tasks
+    return generate_journal_sections(journal_config, section_tasks)
 end
 
 -- Record carryover events in database for analytics
@@ -922,15 +968,8 @@ end
 function M._create_basic_journal_content(journal_type)
     local journal_config = config.journal.daily_template[journal_type]
 
-    -- Generate only body content - ZK handles frontmatter via ~/.config/zk templates
-    local content_parts = {}
-
-    for _, section in ipairs(journal_config.sections) do
-        table.insert(content_parts, "## " .. section)
-        table.insert(content_parts, "")
-    end
-
-    return table.concat(content_parts, "\n")
+    -- Generate journal content without carried over tasks
+    return generate_journal_sections(journal_config, nil)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -1177,7 +1216,7 @@ function M._setup_commands()
 
         vim.api.nvim_create_user_command("NotesLastWeek", function(opts)
             local track_type = opts.args ~= "" and opts.args or "personal"
-            print("📊 Last Week's Productivity (" .. track_type .. ")")
+            print(icons.get_with_space("stats") .. "Last Week's Productivity (" .. track_type .. ")")
             M.productivity_trend(track_type, 7)
             print("\n" .. string.rep("═", 60))
             M.daily_completions(track_type, 7)
@@ -1536,7 +1575,7 @@ function M.daily_completions(track_type, days, opts)
 
     -- Fix: Check if results is valid and is a table before getting length
     if not results or type(results) ~= "table" or #results == 0 then
-        print("📊 No completion data found for the last " .. days .. " days")
+        print(icons.get_with_space("stats") .. "No completion data found for the last " .. days .. " days")
         return
     end
 
@@ -1552,8 +1591,8 @@ function M.daily_completions(track_type, days, opts)
 
     -- Create chart
     local chart_opts = deep_merge(config.visualization.charts.histogram, opts or {})
-    chart_opts.title = string.format("📊 Daily Completions - %s (%d days)",
-        string.upper(track_type), days)
+    chart_opts.title = string.format("%sDaily Completions - %s (%d days)",
+        icons.get_with_space("stats"), string.upper(track_type), days)
 
     local chart = plot.histogram(chart_data, chart_opts)
 
@@ -1661,7 +1700,7 @@ function M.productivity_trend(track_type, days, opts)
 
     -- Fix: Check if results is valid and is a table before getting length
     if not results or type(results) ~= "table" or #results == 0 then
-        print("📈 No productivity data found for the last " .. days .. " days")
+        print(icons.get_with_space("chart") .. "No productivity data found for the last " .. days .. " days")
         return
     end
 
@@ -1677,8 +1716,8 @@ function M.productivity_trend(track_type, days, opts)
 
     -- Create line plot
     local chart_opts = deep_merge(config.visualization.charts.line_plot, opts or {})
-    chart_opts.title = string.format("📈 Productivity Trend - %s (%d days)",
-        string.upper(track_type), days)
+    chart_opts.title = string.format("%sProductivity Trend - %s (%d days)",
+        icons.get_with_space("chart"), string.upper(track_type), days)
 
     local chart = plot.line_plot(chart_data, chart_opts)
 
@@ -1774,22 +1813,22 @@ function M.dashboard(track_type, opts)
     end
 
     -- Header
-    add_line("🎯 TASK ANALYTICS DASHBOARD - " .. string.upper(track_type))
+    add_line(icons.get_with_space("target") .. "TASK ANALYTICS DASHBOARD - " .. string.upper(track_type))
     add_line("═" .. string.rep("═", 60))
     add_line("")
 
     -- Get database
     local db = M._get_task_database(track_type)
     if not db then
-        add_line("❌ Database not available for " .. track_type .. " tasks")
+        add_line(icons.get_with_space("x") .. "Database not available for " .. track_type .. " tasks")
         add_line("")
-        add_line("💡 To get started:")
+        add_line(icons.get_with_space("lightbulb") .. "To get started:")
         add_line("  • Create a note matching your pattern (e.g., perso-2024-09-22.md)")
         add_line("  • Add some tasks with [ ] checkboxes")
         add_line("  • Save the file to start tracking")
     else
         -- Task states overview
-        add_line("📊 TASK STATES OVERVIEW")
+        add_line(icons.get_with_space("stats") .. "TASK STATES OVERVIEW")
         add_line("─" .. string.rep("─", 30))
         local state_results = M._get_task_states_data(track_type)
         if state_results and #state_results > 0 then
@@ -1802,12 +1841,12 @@ function M.dashboard(track_type, opts)
                 add_line(tostring(pie_chart))
             end
         else
-            add_line("🥧 No task state data found")
+            add_line(icons.get_with_space("info") .. "No task state data found")
         end
         add_line("")
 
         -- Daily completions
-        add_line("📈 DAILY COMPLETIONS (Last " .. days .. " days)")
+        add_line(icons.get_with_space("chart") .. "DAILY COMPLETIONS (Last " .. days .. " days)")
         add_line("─" .. string.rep("─", 40))
         local completion_results = M._get_daily_completions_data(track_type, days)
         if completion_results and #completion_results > 0 then
@@ -1820,12 +1859,12 @@ function M.dashboard(track_type, opts)
                 add_line(tostring(histogram))
             end
         else
-            add_line("📊 No completion data found for the last " .. days .. " days")
+            add_line(icons.get_with_space("stats") .. "No completion data found for the last " .. days .. " days")
         end
         add_line("")
 
         -- Productivity trend (last 14 days)
-        add_line("📈 PRODUCTIVITY TREND (Last 14 days)")
+        add_line(icons.get_with_space("chart") .. "PRODUCTIVITY TREND (Last 14 days)")
         add_line("─" .. string.rep("─", 40))
         local trend_results = M._get_productivity_trend_data(track_type, 14)
         if trend_results and #trend_results > 0 then
@@ -1838,12 +1877,12 @@ function M.dashboard(track_type, opts)
                 add_line(tostring(line_plot))
             end
         else
-            add_line("📈 No productivity trend data available")
+            add_line(icons.get_with_space("chart") .. "No productivity trend data available")
         end
         add_line("")
 
         -- Task type distribution
-        add_line("📊 TASK TYPE DISTRIBUTION")
+        add_line(icons.get_with_space("stats") .. "TASK TYPE DISTRIBUTION")
         add_line("─" .. string.rep("─", 30))
         local type_results = M._get_task_type_data(track_type)
         if type_results and #type_results > 0 then
@@ -1903,9 +1942,10 @@ function M.dashboard(track_type, opts)
     end
 
     -- Footer
-    add_line("📊 Dashboard generated at " .. os.date("%Y-%m-%d %H:%M:%S"))
+    add_line(icons.get_with_space("stats") .. "Dashboard generated at " .. os.date("%Y-%m-%d %H:%M:%S"))
     add_line("")
-    add_line("💡 Press 'q' to close | 'r' to refresh | 'y' for previous day | 't' for today | 'f' for full review")
+    add_line(icons.get_with_space("lightbulb") ..
+        "Press 'q' to close | 'r' to refresh | 'y' for previous day | 't' for today | 'f' for full review")
 
     -- Create buffer
     M._create_dashboard_buffer(track_type, lines)
@@ -1967,7 +2007,7 @@ function M._create_dashboard_buffer(track_type, lines)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
     -- Notify
-    notify(string.format("📊 %s dashboard opened", track_type), "info", "dashboard")
+    notify(string.format("%s%s dashboard opened", icons.get_with_space("stats"), track_type), "info", "dashboard")
 end
 
 -- Helper functions to get data (for buffer creation)
@@ -2207,10 +2247,10 @@ function M._get_weekly_achievements(track_type)
     local productivity_score = (row.completed_tasks * 3) + row.created_tasks
 
     return {
-        { "Tasks Worked On", row.unique_tasks, "📝" },
-        { "Tasks Completed", row.completed_tasks, "✅" },
-        { "New Tasks Created", row.created_tasks, "🆕" },
-        { "Productivity Score", productivity_score, productivity_score > 20 and "🔥" or "📈" }
+        { "Tasks Worked On",    row.unique_tasks,    icons.get("note") },
+        { "Tasks Completed",    row.completed_tasks, icons.get("check") },
+        { "New Tasks Created",  row.created_tasks,   icons.get("new") },
+        { "Productivity Score", productivity_score,  productivity_score > 20 and icons.get("fire") or icons.get("chart") }
     }
 end
 
@@ -2274,8 +2314,9 @@ function M._get_week_best_day(track_type)
     end
 
     local best_day = results[1]
-    local rating = best_day.task_count > 10 and "🔥 Superstar!" or
-        best_day.task_count > 5 and "⭐ Great!" or "👍 Good effort!"
+    local rating = best_day.task_count > 10 and (icons.get_with_space("fire") .. "Superstar!") or
+        best_day.task_count > 5 and (icons.get_with_space("star") .. "Great!") or
+        (icons.get_with_space("check") .. "Good effort!")
 
     return {
         day = best_day.day_name,
@@ -2444,9 +2485,9 @@ function M._get_today_carryover_impact(track_type)
 
     -- Calculate productivity impact based on carryover weight (-1)
     local productivity_impact = carried_in * config.visualization.data.productivity_weights.carried_over
-    local impact_text = productivity_impact < -5 and "⚠️ High carryover load" or
-        productivity_impact < -2 and "📊 Moderate carryover" or
-        "✅ Light carryover"
+    local impact_text = productivity_impact < -5 and (icons.get_with_space("warning") .. "High carryover load") or
+        productivity_impact < -2 and (icons.get_with_space("stats") .. "Moderate carryover") or
+        (icons.get_with_space("check") .. "Light carryover")
 
     return {
         carried_in = carried_in,
@@ -2470,17 +2511,17 @@ function M.today_dashboard(track_type)
     end
 
     -- Header
-    add_line("📅 TODAY'S FOCUS DASHBOARD - " .. string.upper(track_type))
+    add_line(icons.get_with_space("calendar") .. "TODAY'S FOCUS DASHBOARD - " .. string.upper(track_type))
     add_line("═" .. string.rep("═", 50))
     add_line("")
 
     local db = M._get_task_database(track_type)
     if not db then
-        add_line("❌ Database not available")
-        add_line("💡 Create some tasks today to see your hourly activity!")
+        add_line(icons.get_with_space("x") .. "Database not available")
+        add_line(icons.get_with_space("lightbulb") .. "Create some tasks today to see your hourly activity!")
     else
         -- Today's hourly activity
-        add_line("⏰ TODAY'S HOURLY ACTIVITY")
+        add_line(icons.get_with_space("clock") .. "TODAY'S HOURLY ACTIVITY")
         add_line("─" .. string.rep("─", 30))
         local hourly_data = M._get_hourly_activity_data(track_type, 0) -- Today
         if hourly_data and #hourly_data > 0 then
@@ -2846,7 +2887,7 @@ function M.help()
         "📖 NOTES MODULE HELP",
         "=" .. string.rep("=", 60),
         "",
-        "🎯 QUICK START",
+        icons.get_with_space("target") .. "QUICK START",
         "-" .. string.rep("-", 20),
         "  :ZkTaskStats         Show task analytics dashboard",
         "  :ZkNewDailyJournal   Create new personal journal",
@@ -2855,17 +2896,18 @@ function M.help()
         "  <leader>nj           New personal journal (keybind)",
         "  <leader>nw           New work journal (keybind)",
         "",
-        "⚙️ CONFIGURATION",
+        icons.get_with_space("info") .. "CONFIGURATION",
         "-" .. string.rep("-", 20),
         "  Current notebook:    " .. (config.directories and config.directories.notebook or "Not configured"),
         "  Tracking types:      " .. (config.tracking and table.concat(vim.tbl_keys(config.tracking), ", ") or "None"),
         "  Visualization:       " ..
-        (config.visualization and config.visualization.enabled and "✅ Enabled" or "❌ Disabled"),
-        "  ZK integration:      " .. (config.zk and config.zk.enabled and "✅ Enabled" or "❌ Disabled"),
+        (config.visualization and config.visualization.enabled and (icons.get_with_space("check") .. "Enabled") or (icons.get_with_space("x") .. "Disabled")),
+        "  ZK integration:      " ..
+        (config.zk and config.zk.enabled and (icons.get_with_space("check") .. "Enabled") or (icons.get_with_space("x") .. "Disabled")),
         "  Notifications:       " ..
-        (config.notifications and config.notifications.enabled and "✅ Enabled" or "❌ Disabled"),
+        (config.notifications and config.notifications.enabled and (icons.get_with_space("check") .. "Enabled") or (icons.get_with_space("x") .. "Disabled")),
         "",
-        "📊 AVAILABLE FUNCTIONS",
+        icons.get_with_space("stats") .. "AVAILABLE FUNCTIONS",
         "-" .. string.rep("-", 20),
         "  require('notes').dashboard('personal')   -- Personal dashboard",
         "  require('notes').dashboard('work')       -- Work dashboard",
@@ -2874,17 +2916,19 @@ function M.help()
         "  require('notes').personal()              -- Personal quick dashboard",
         "  require('notes').work()                  -- Work quick dashboard",
         "",
-        "🔔 NOTIFICATIONS",
+        icons.get_with_space("bell") .. "NOTIFICATIONS",
         "-" .. string.rep("-", 20),
         "  Task operations:     " ..
-        (config.notifications and config.notifications.task_operations and "✅ Enabled" or "❌ Disabled"),
+        (config.notifications and config.notifications.task_operations and (icons.get_with_space("check") .. "Enabled") or (icons.get_with_space("x") .. "Disabled")),
         "  Journal carryover:   " ..
-        (config.notifications and config.notifications.journal_carryover and "✅ Enabled" or "❌ Disabled"),
+        (config.notifications and config.notifications.journal_carryover and (icons.get_with_space("check") .. "Enabled") or (icons.get_with_space("x") .. "Disabled")),
         "  Examples:",
-        "    📝 2 new tasks, ✅ 1 completed in work-2024-09-22.md",
-        "    📦 Carried over 3 unfinished tasks from perso-2024-09-21.md",
+        "    " ..
+        icons.get_with_space("note") ..
+        "2 new tasks, " .. icons.get_with_space("check") .. "1 completed in work-2024-09-22.md",
+        "    " .. icons.get_with_space("save") .. "Carried over 3 unfinished tasks from perso-2024-09-21.md",
         "",
-        "🔧 TROUBLESHOOTING",
+        icons.get_with_space("info") .. "TROUBLESHOOTING",
         "-" .. string.rep("-", 20),
         "  Commands not working? → Restart Neovim after config changes",
         "  No task data?        → Create tasks with <leader>nT format",
@@ -2892,7 +2936,7 @@ function M.help()
         "  Keybinds conflict?   → Check with :map <leader>n",
         "  Too many notifications? → Set notifications.enabled = false",
         "",
-        "📁 FILE PATTERNS",
+        icons.get_with_space("folder") .. "FILE PATTERNS",
         "-" .. string.rep("-", 20),
     }
 
@@ -3071,7 +3115,7 @@ function M.examples()
         "  data = { date_format = 'relative' }",
         "}",
         "",
-        "🔔 NOTIFICATION OPTIONS:",
+        icons.get_with_space("bell") .. "NOTIFICATION OPTIONS:",
         "notifications = {",
         "  enabled = true,           -- Master toggle",
         "  task_operations = true,   -- Task save/update notifications",
@@ -3080,11 +3124,13 @@ function M.examples()
         "  duration = 3000           -- Display time in ms (0 = no timeout)",
         "}",
         "",
-        "📝 JOURNAL TEMPLATES:",
+        icons.get_with_space("note") .. "JOURNAL TEMPLATES:",
         "journal = {",
         "  daily_template = {",
         "    personal = {",
-        "      sections = {'🎯 Focus', '📋 Tasks', '💭 Ideas'}",
+        "      sections = {'" ..
+        icons.get("target") ..
+        " Focus', '" .. icons.get("clipboard") .. " Tasks', '" .. icons.get("lightbulb") .. " Ideas'}",
         "    }",
         "  }",
         "}",

@@ -2,6 +2,7 @@
 -- Data formatting, conversion, and utility functions for task visualizations
 -- Bridges between SQLite results and plotting functions
 
+local icons = require('notes.icons')
 local M = {}
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -67,43 +68,31 @@ end
 -- @param state: task state string
 -- @return: emoji + state string
 function M.add_state_emoji(state)
-    local emoji_map = {
-        FINISHED = "",
-        COMPLETED = "",
-        IN_PROGRESS = "",
-        STARTED = "",
-        CREATED = "",
-        NEW = "",
-        DELETED = "",
-        CANCELLED = "",
-        BLOCKED = "",
-        PAUSED = ""
-    }
-
-    local upper_state = string.upper(tostring(state or ""))
-    local emoji = emoji_map[upper_state] or ""
-
-    return emoji .. " " .. (state or "Unknown")
+    local icon = icons.get_state_icon(state)
+    local space = icon ~= "" and " " or ""
+    return icon .. space .. (state or "Unknown")
 end
 
 -- Add emojis to event types
 -- @param event_type: event type string
 -- @return: emoji + event type string
 function M.add_event_emoji(event_type)
-    local emoji_map = {
-        task_created = "",
-        task_completed = "",
-        task_started = "",
-        task_carried_over = "",
-        task_deleted = "",
-        task_paused = "",
-        task_resumed = "",
-        task_blocked = ""
+    local event_to_icon = {
+        task_created = "note",
+        task_completed = "check",
+        task_started = "rocket",
+        task_carried_over = "save",
+        task_deleted = "trash",
+        task_paused = "pause",
+        task_resumed = "rocket",
+        task_blocked = "blocked"
     }
 
-    local emoji = emoji_map[tostring(event_type or "")] or ""
+    local icon_name = event_to_icon[tostring(event_type or "")]
+    local icon = icon_name and icons.get(icon_name) or ""
+    local space = icon ~= "" and " " or ""
 
-    return emoji .. " " .. (event_type or "unknown")
+    return icon .. space .. (event_type or "unknown")
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
