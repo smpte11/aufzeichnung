@@ -76,6 +76,157 @@ function M._setup_buffer_keymaps(bufnr, config)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- 📂 DIRECTORY PICKER
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- Get all directories in the notebook recursively
+function M._get_notebook_directories(notebook_dir, max_depth)
+    max_depth = max_depth or 3
+    local directories = {}
+
+    local function scan_dir(path, depth)
+        if depth > max_depth then return end
+
+        local handle = vim.loop.fs_scandir(path)
+        if not handle then return end
+
+        while true do
+            local name, typ = vim.loop.fs_scandir_next(handle)
+            if not name then break end
+
+            -- Skip hidden directories and common ignore patterns
+            if typ == "directory" and not name:match("^%.") then
+                local full_path = path .. "/" .. name
+                local relative_path = full_path:sub(#notebook_dir + 2) -- Remove notebook_dir prefix
+                table.insert(directories, relative_path)
+                scan_dir(full_path, depth + 1)
+            end
+        end
+    end
+
+    -- Also add the root directory option
+    table.insert(directories, ".")
+    scan_dir(notebook_dir, 1)
+
+    -- Sort directories alphabetically
+    table.sort(directories, function(a, b)
+        if a == "." then return true end
+        if b == "." then return false end
+        return a < b
+    end)
+
+    return directories
+end
+
+-- Show directory picker using mini.pick
+function M._pick_directory(notebook_dir, callback)
+    local ok, MiniPick = pcall(require, "mini.pick")
+    if not ok then
+        -- Fallback to vim.fn.input if mini.pick not available
+        local dir = vim.fn.input("Directory: ", notebook_dir)
+        if dir ~= "" then
+            callback(dir)
+        end
+        return
+    end
+
+    local directories = M._get_notebook_directories(notebook_dir)
+
+    if #directories == 0 then
+        vim.notify("No directories found in notebook", vim.log.levels.WARN)
+        return
+    end
+
+    -- Create items for picker
+    local items = {}
+    for _, dir in ipairs(directories) do
+        local display = dir == "." and "📁 (root)" or "📁 " .. dir
+        table.insert(items, {
+            text = display,
+            path = dir == "." and notebook_dir or dir
+        })
+    end
+
+    MiniPick.start({
+        source = {
+            name = "Select Directory",
+            items = items,
+            choose = function(item)
+                if item and item.path then
+                    callback(item.path)
+                end
+            end
+        },
+        window = {
+            config = function()
+                local height = math.min(15, #items + 2)
+                local width = 50
+
+                return {
+                    relative = "editor",
+                    anchor = "NW",
+                    height = height,
+                    width = width,
+                    row = math.floor(vim.o.lines * 0.2),
+                    col = math.floor((vim.o.columns - width) / 2),
+                    border = "rounded",
+                    style = "minimal"
+                }
+            end
+        }
+    })
+end
+
+-- Show journal type picker using mini.pick
+function M._pick_journal_type(callback)
+    local ok, MiniPick = pcall(require, "mini.pick")
+    if not ok then
+        -- Fallback to vim.fn.input if mini.pick not available
+        local choice = vim.fn.input("Journal type (p)ersonal or (w)ork: ")
+        if choice == "p" or choice == "personal" then
+            callback("personal")
+        elseif choice == "w" or choice == "work" then
+            callback("work")
+        end
+        return
+    end
+
+    local items = {
+        { text = "📝 Personal Journal", type = "personal" },
+        { text = "💼 Work Journal", type = "work" }
+    }
+
+    MiniPick.start({
+        source = {
+            name = "Select Journal Type",
+            items = items,
+            choose = function(item)
+                if item and item.type then
+                    callback(item.type)
+                end
+            end
+        },
+        window = {
+            config = function()
+                local height = 4 -- Just 2 options + border
+                local width = 30
+
+                return {
+                    relative = "editor",
+                    anchor = "NW",
+                    height = height,
+                    width = width,
+                    row = math.floor(vim.o.lines * 0.2),
+                    col = math.floor((vim.o.columns - width) / 2),
+                    border = "rounded",
+                    style = "minimal"
+                }
+            end
+        }
+    })
+end
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- 📝 COMMANDS
 -- ═══════════════════════════════════════════════════════════════════════
 
@@ -84,40 +235,53 @@ function M._register_commands(config)
 
     -- Note creation commands
     commands.add("ZkNewAtDir", function(options)
-        local dir = vim.fn.input("Directory: ", config.directories.notebook)
-        if dir == "" then return end
+        M._pick_directory(config.directories.notebook, function(dir)
+            local title = vim.fn.input("Title: ")
+            if title == "" then return end
 
-        local title = vim.fn.input("Title: ")
-        if title == "" then return end
-
-        M.zk.new({ dir = dir, title = title })
+            M.zk.new({ dir = dir, title = title })
+        end)
     end)
 
     -- Journal commands
+    -- Unified journal command with type and directory pickers
+    commands.add("ZkNewJournal", function(options)
+        M._pick_journal_type(function(journal_type)
+            M._pick_directory(config.directories.notebook, function(dir)
+                local journal_config = config.journal.daily_template[journal_type]
+                local date = os.date("%Y-%m-%d")
+                local title = journal_config.prefix .. "-" .. date
+                local target_dir = config.directories.notebook .. "/" .. dir
+                local content = M.notes._create_journal_content_with_carryover(target_dir, journal_type)
+
+                M.zk.new({ dir = dir, title = title, content = content })
+            end)
+        end)
+    end)
+
+    -- Legacy commands kept for backward compatibility and quick shortcuts
     commands.add("ZkNewDailyJournal", function(options)
-        local dir = vim.fn.input("Journal directory: ", config.directories.personal_journal)
-        if dir == "" then return end
+        M._pick_directory(config.directories.notebook, function(dir)
+            local journal_config = config.journal.daily_template.personal
+            local date = os.date("%Y-%m-%d")
+            local title = journal_config.prefix .. "-" .. date
+            local target_dir = config.directories.notebook .. "/" .. dir
+            local content = M.notes._create_journal_content_with_carryover(target_dir, "personal")
 
-        local journal_config = config.journal.daily_template.personal
-        local date = os.date("%Y-%m-%d")
-        local title = journal_config.prefix .. "-" .. date
-        local target_dir = config.directories.notebook .. "/" .. dir
-        local content = M.notes._create_journal_content_with_carryover(target_dir, "personal")
-
-        M.zk.new({ dir = dir, title = title, content = content })
+            M.zk.new({ dir = dir, title = title, content = content })
+        end)
     end)
 
     commands.add("ZkNewWorkJournal", function(options)
-        local dir = vim.fn.input("Work journal directory: ", config.directories.work_journal)
-        if dir == "" then return end
+        M._pick_directory(config.directories.notebook, function(dir)
+            local journal_config = config.journal.daily_template.work
+            local date = os.date("%Y-%m-%d")
+            local title = journal_config.prefix .. "-" .. date
+            local target_dir = config.directories.notebook .. "/" .. dir
+            local content = M.notes._create_journal_content_with_carryover(target_dir, "work")
 
-        local journal_config = config.journal.daily_template.work
-        local date = os.date("%Y-%m-%d")
-        local title = journal_config.prefix .. "-" .. date
-        local target_dir = config.directories.notebook .. "/" .. dir
-        local content = M.notes._create_journal_content_with_carryover(target_dir, "work")
-
-        M.zk.new({ dir = dir, title = title, content = content })
+            M.zk.new({ dir = dir, title = title, content = content })
+        end)
     end)
 end
 
@@ -148,14 +312,15 @@ function M.setup_keymaps(config)
     -- Journal creation
     if mappings.daily_journal then
         vim.keymap.set("n", prefix .. mappings.daily_journal,
-            "<Cmd>ZkNewDailyJournal<CR>",
-            vim.tbl_extend("force", opts, { desc = "New daily journal (zk)" }))
+            "<Cmd>ZkNewJournal<CR>",
+            vim.tbl_extend("force", opts, { desc = "New journal (zk)" }))
     end
 
+    -- Optional: Keep work_journal mapping as a direct shortcut to work journals
     if mappings.work_journal then
         vim.keymap.set("n", prefix .. mappings.work_journal,
             "<Cmd>ZkNewWorkJournal<CR>",
-            vim.tbl_extend("force", opts, { desc = "New work journal (zk)" }))
+            vim.tbl_extend("force", opts, { desc = "New work journal shortcut (zk)" }))
     end
 
     -- Note browsing
