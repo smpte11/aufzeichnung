@@ -1,4 +1,4 @@
--- ⚡ ZK-NVIM INTEGRATION MODULE ⚡
+--  ZK-NVIM INTEGRATION MODULE
 -- Optional integration with zk-nvim for advanced note management
 -- This module is only loaded if zk-nvim is available
 
@@ -9,7 +9,7 @@ M.zk = nil
 M.is_available = false
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 🔧 SETUP
+--  SETUP
 -- ═══════════════════════════════════════════════════════════════════════
 
 function M.setup(notes_config, notes_module)
@@ -54,7 +54,7 @@ function M.setup(notes_config, notes_module)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
--- ⌨️ BUFFER-SPECIFIC KEYMAPS
+--  BUFFER-SPECIFIC KEYMAPS
 -- ═══════════════════════════════════════════════════════════════════════
 
 function M._setup_buffer_keymaps(bufnr, config)
@@ -76,7 +76,7 @@ function M._setup_buffer_keymaps(bufnr, config)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 📂 DIRECTORY PICKER
+--  DIRECTORY PICKER
 -- ═══════════════════════════════════════════════════════════════════════
 
 -- Get all directories in the notebook recursively
@@ -140,7 +140,7 @@ function M._pick_directory(notebook_dir, callback)
     -- Create items for picker
     local items = {}
     for _, dir in ipairs(directories) do
-        local display = dir == "." and "📁 (root)" or "📁 " .. dir
+        local display = dir == "." and " (root)" or " " .. dir
         table.insert(items, {
             text = display,
             path = dir == "." and notebook_dir or dir
@@ -192,8 +192,8 @@ function M._pick_journal_type(callback)
     end
 
     local items = {
-        { text = "📝 Personal Journal", type = "personal" },
-        { text = "💼 Work Journal", type = "work" }
+        { text = " Personal Journal", type = "personal" },
+        { text = " Work Journal",     type = "work" }
     }
 
     MiniPick.start({
@@ -227,7 +227,7 @@ function M._pick_journal_type(callback)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 📝 COMMANDS
+--  COMMANDS
 -- ═══════════════════════════════════════════════════════════════════════
 
 function M._register_commands(config)
@@ -286,7 +286,7 @@ function M._register_commands(config)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
--- ⌨️ KEYMAPS
+--  KEYMAPS
 -- ═══════════════════════════════════════════════════════════════════════
 
 function M.setup_keymaps(config)
