@@ -140,7 +140,7 @@ function M._pick_directory(notebook_dir, callback)
     -- Create items for picker
     local items = {}
     for _, dir in ipairs(directories) do
-        local display = dir == "." and "📁 (root)" or "📁 " .. dir
+        local display = dir == "." and " (root)" or " " .. dir
         table.insert(items, {
             text = display,
             path = dir == "." and notebook_dir or dir
@@ -192,8 +192,8 @@ function M._pick_journal_type(callback)
     end
 
     local items = {
-        { text = "📝 Personal Journal", type = "personal" },
-        { text = "💼 Work Journal", type = "work" }
+        { text = " Personal Journal", type = "personal" },
+        { text = " Work Journal", type = "work" }
     }
 
     MiniPick.start({

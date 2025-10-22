@@ -68,20 +68,20 @@ end
 -- @return: emoji + state string
 function M.add_state_emoji(state)
 	local emoji_map = {
-		FINISHED = "✅",
-		COMPLETED = "✅",
-		IN_PROGRESS = "🚀",
-		STARTED = "🚀",
-		CREATED = "📝",
-		NEW = "📝",
-		DELETED = "🗑️",
-		CANCELLED = "❌",
-		BLOCKED = "🚫",
-		PAUSED = "⏸️"
+		FINISHED = "",
+		COMPLETED = "",
+		IN_PROGRESS = "",
+		STARTED = "",
+		CREATED = "",
+		NEW = "",
+		DELETED = "",
+		CANCELLED = "",
+		BLOCKED = "",
+		PAUSED = ""
 	}
 	
 	local upper_state = string.upper(tostring(state or ""))
-	local emoji = emoji_map[upper_state] or "📄"
+	local emoji = emoji_map[upper_state] or ""
 	
 	return emoji .. " " .. (state or "Unknown")
 end
@@ -91,17 +91,17 @@ end
 -- @return: emoji + event type string
 function M.add_event_emoji(event_type)
 	local emoji_map = {
-		task_created = "➕",
-		task_completed = "✅",
-		task_started = "🚀",
-		task_carried_over = "⏭️",
-		task_deleted = "🗑️",
-		task_paused = "⏸️",
-		task_resumed = "▶️",
-		task_blocked = "🚫"
+		task_created = "",
+		task_completed = "",
+		task_started = "",
+		task_carried_over = "",
+		task_deleted = "",
+		task_paused = "",
+		task_resumed = "",
+		task_blocked = ""
 	}
 	
-	local emoji = emoji_map[tostring(event_type or "")] or "📋"
+	local emoji = emoji_map[tostring(event_type or "")] or ""
 	
 	return emoji .. " " .. (event_type or "unknown")
 end
