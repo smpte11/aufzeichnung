@@ -1080,7 +1080,7 @@ function M._get_picker_parent_tasks(track_type)
             task_preview = task_preview .. "..."
         end
 
-        local state_emoji = row.state == "IN_PROGRESS" and "" or ""
+        local state_emoji = row.state == "IN_PROGRESS" and utils.icons.rocket or utils.icons.pencil
         local display = string.format("%s %s %s", truncated_uuid, state_emoji, task_preview)
 
         table.insert(items, {

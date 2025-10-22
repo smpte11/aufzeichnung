@@ -487,6 +487,80 @@ MIT License
 
 Originally developed as part of [smpte11/nvim](https://github.com/smpte11/nvim) configuration.
 
+## 🎨 Icon Customization
+
+All Nerd Font icons used in the plugin are centralized in one location for easy customization.
+
+### Icon Configuration
+
+All icons are defined in `lua/notes/utils.lua` in the `M.icons` table:
+
+```lua
+M.icons = {
+    -- Task states
+    check = "",           -- nf-fa-check (U+F00C) - completed/finished
+    rocket = "",          -- nf-fa-rocket (U+F135) - in progress/started
+    pencil = "",          -- nf-fa-pencil (U+F040) - created/new
+    trash = "",           -- nf-fa-trash (U+F1F8) - deleted
+    times = "",           -- nf-fa-times (U+F00D) - cancelled
+    lock = "",            -- nf-fa-lock (U+F023) - blocked
+    pause = "",           -- nf-fa-pause (U+F04C) - paused
+    file = "",            -- nf-fa-file (U+F15B) - unknown/default
+    
+    -- Task events
+    plus = "",            -- nf-fa-plus (U+F067) - created
+    forward = "",         -- nf-fa-forward (U+F04E) - carried over
+    play = "",            -- nf-fa-play (U+F04B) - resumed
+    list = "",            -- nf-fa-list (U+F03A) - list/default
+    
+    -- UI elements
+    folder = "",          -- nf-fa-folder (U+F07B) - directory
+    file_text = "",       -- nf-fa-file_text (U+F0F6) - document/personal
+    briefcase = "",       -- nf-fa-briefcase (U+F0B1) - work
+}
+```
+
+### How to Customize Icons
+
+1. Open `lua/notes/utils.lua`
+2. Find the `M.icons` table (around line 13)
+3. Replace icon glyphs with your preferred icons from [Nerd Fonts Cheat Sheet](https://www.nerdfonts.com/cheat-sheet)
+4. Save and reload Neovim
+
+**Example**: Change the folder icon
+```lua
+-- Before
+folder = "",          -- nf-fa-folder
+
+-- After (using folder-open icon)
+folder = "",          -- nf-fa-folder-open
+```
+
+### Icon Usage
+
+- **Task States**: Used in dashboards, charts, and status displays
+  - `check` - Completed/Finished tasks
+  - `rocket` - In Progress/Started tasks
+  - `pencil` - Created/New tasks
+  - `trash` - Deleted tasks
+  - `times` - Cancelled tasks
+  - `lock` - Blocked tasks
+  - `pause` - Paused tasks
+  - `file` - Unknown states
+
+- **Task Events**: Used in activity logs and event tracking
+  - `plus` - Task creation events
+  - `forward` - Task carryover events
+  - `play` - Task resume events
+  - `list` - Default/unknown events
+
+- **UI Elements**: Used in pickers and interface
+  - `folder` - Directory picker (the one you mentioned!)
+  - `file_text` - Personal journal picker
+  - `briefcase` - Work journal picker
+
+All changes to `M.icons` automatically apply throughout the entire plugin.
+
 ## 📚 Documentation
 
 For more detailed documentation, see the help files:

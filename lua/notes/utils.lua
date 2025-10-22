@@ -5,6 +5,42 @@
 local M = {}
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- 🎨 NERD FONT ICONS CONFIGURATION
+-- ═══════════════════════════════════════════════════════════════════════
+-- CENTRALIZED ICON DEFINITIONS - All icons used throughout the plugin!
+--
+-- TO CUSTOMIZE: 
+--   1. Visit https://www.nerdfonts.com/cheat-sheet
+--   2. Find an icon you like and click to copy it
+--   3. Paste the icon glyph between the quotes below
+--   4. Save and reload Neovim - changes apply immediately!
+--
+-- See README.md "Icon Customization" section for detailed usage info.
+
+M.icons = {
+	-- Task states
+	check = "",           -- nf-fa-check (U+F00C) - completed/finished
+	rocket = "",          -- nf-fa-rocket (U+F135) - in progress/started
+	pencil = "",          -- nf-fa-pencil (U+F040) - created/new
+	trash = "",           -- nf-fa-trash (U+F1F8) - deleted
+	times = "",           -- nf-fa-times (U+F00D) - cancelled
+	lock = "",            -- nf-fa-lock (U+F023) - blocked
+	pause = "",           -- nf-fa-pause (U+F04C) - paused
+	file = "",            -- nf-fa-file (U+F15B) - unknown/default
+	
+	-- Task events
+	plus = "",            -- nf-fa-plus (U+F067) - created
+	forward = "",         -- nf-fa-forward (U+F04E) - carried over
+	play = "",            -- nf-fa-play (U+F04B) - resumed
+	list = "",            -- nf-fa-list (U+F03A) - list/default
+	
+	-- UI elements
+	folder = "",          -- nf-fa-folder (U+F07B) - directory
+	file_text = "",       -- nf-fa-file_text (U+F0F6) - document/personal
+	briefcase = "",       -- nf-fa-briefcase (U+F0B1) - work
+}
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- 📊 DATA CONVERSION UTILITIES
 -- ═══════════════════════════════════════════════════════════════════════
 
@@ -68,20 +104,20 @@ end
 -- @return: emoji + state string
 function M.add_state_emoji(state)
 	local emoji_map = {
-		FINISHED = "",
-		COMPLETED = "",
-		IN_PROGRESS = "",
-		STARTED = "",
-		CREATED = "",
-		NEW = "",
-		DELETED = "",
-		CANCELLED = "",
-		BLOCKED = "",
-		PAUSED = ""
+		FINISHED = M.icons.check,
+		COMPLETED = M.icons.check,
+		IN_PROGRESS = M.icons.rocket,
+		STARTED = M.icons.rocket,
+		CREATED = M.icons.pencil,
+		NEW = M.icons.pencil,
+		DELETED = M.icons.trash,
+		CANCELLED = M.icons.times,
+		BLOCKED = M.icons.lock,
+		PAUSED = M.icons.pause
 	}
 	
 	local upper_state = string.upper(tostring(state or ""))
-	local emoji = emoji_map[upper_state] or ""
+	local emoji = emoji_map[upper_state] or M.icons.file
 	
 	return emoji .. " " .. (state or "Unknown")
 end
@@ -91,17 +127,17 @@ end
 -- @return: emoji + event type string
 function M.add_event_emoji(event_type)
 	local emoji_map = {
-		task_created = "",
-		task_completed = "",
-		task_started = "",
-		task_carried_over = "",
-		task_deleted = "",
-		task_paused = "",
-		task_resumed = "",
-		task_blocked = ""
+		task_created = M.icons.plus,
+		task_completed = M.icons.check,
+		task_started = M.icons.rocket,
+		task_carried_over = M.icons.forward,
+		task_deleted = M.icons.trash,
+		task_paused = M.icons.pause,
+		task_resumed = M.icons.play,
+		task_blocked = M.icons.lock
 	}
 	
-	local emoji = emoji_map[tostring(event_type or "")] or ""
+	local emoji = emoji_map[tostring(event_type or "")] or M.icons.list
 	
 	return emoji .. " " .. (event_type or "unknown")
 end

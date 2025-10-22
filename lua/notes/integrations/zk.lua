@@ -138,9 +138,10 @@ function M._pick_directory(notebook_dir, callback)
     end
 
     -- Create items for picker
+    local utils = require('notes.utils')
     local items = {}
     for _, dir in ipairs(directories) do
-        local display = dir == "." and " (root)" or " " .. dir
+        local display = dir == "." and utils.icons.folder .. " (root)" or utils.icons.folder .. " " .. dir
         table.insert(items, {
             text = display,
             path = dir == "." and notebook_dir or dir
@@ -191,9 +192,10 @@ function M._pick_journal_type(callback)
         return
     end
 
+    local utils = require('notes.utils')
     local items = {
-        { text = " Personal Journal", type = "personal" },
-        { text = " Work Journal", type = "work" }
+        { text = utils.icons.file_text .. " Personal Journal", type = "personal" },
+        { text = utils.icons.briefcase .. " Work Journal", type = "work" }
     }
 
     MiniPick.start({
