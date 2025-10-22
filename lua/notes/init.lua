@@ -730,22 +730,26 @@ function M._track_tasks_on_save(bufnr)
                 goto continue
             end
             
-            -- Check if we recently recorded this exact state+text combination
-            -- This prevents duplicate events when the DB has stale data
-            local recent_exact_match = db:eval([[
-                SELECT COUNT(*) as count
+            -- Check if we recently recorded this exact state+text combination using normalized comparison
+            -- This prevents duplicate events when the DB has stale data or text varies slightly
+            local recent_events = db:eval([[
+                SELECT state, task_text, timestamp
                 FROM task_events 
                 WHERE task_id = ? 
-                  AND state = ?
-                  AND task_text = ?
-                  AND timestamp > datetime('now', '-5 minutes')
+                  AND timestamp > datetime('now', '-2 minutes')
                 ORDER BY timestamp DESC 
-                LIMIT 1
-            ]], { task.uuid, task.state, task.text })
+            ]], { task.uuid })
             
-            if recent_exact_match and #recent_exact_match > 0 and recent_exact_match[1].count > 0 then
-                -- We already recorded this exact state+text recently, skip
-                goto continue
+            if recent_events and type(recent_events) == "table" and #recent_events > 0 then
+                for _, recent_event in ipairs(recent_events) do
+                    local recent_state = recent_event.state
+                    local recent_text_normalized = normalize_text(recent_event.task_text)
+                    
+                    -- If we find a recent event with the exact same state and text, skip
+                    if recent_state == task.state and recent_text_normalized == current_text_normalized then
+                        goto continue
+                    end
+                end
             end
 
             -- Determine event type
@@ -853,12 +857,33 @@ function M._create_journal_helpers()
 
         for line in (section_content .. "\n"):gmatch("(.-)\n") do
             line = line:gsub("^%s+", ""):gsub("%s+$", "")
-            if line:match("^%- %[ %]") or line:match("^%- %[%-%]") then
-                table.insert(tasks, line)
+            -- Match unfinished tasks by looking at the FIRST checkbox (the task state)
+            -- Format: - [state] Task text [ ](task://...)
+            -- We want tasks where state is NOT x or X (i.e., not completed)
+            local checkbox = line:match("^%-%s*%[(.?)%]")
+            if checkbox then
+                -- Task is unfinished if checkbox is not 'x' or 'X'
+                local is_finished = (checkbox == "x" or checkbox == "X")
+                if not is_finished then
+                    table.insert(tasks, line)
+                end
             end
         end
 
         return tasks
+    end
+
+    -- Extract ALL sections from content (not just configured ones)
+    function helpers.extract_all_sections(content)
+        local sections = {}
+        -- Match ## at start of line or after newline
+        for section_name in content:gmatch("^## ([^\n]+)") do
+            table.insert(sections, section_name)
+        end
+        for section_name in content:gmatch("\n## ([^\n]+)") do
+            table.insert(sections, section_name)
+        end
+        return sections
     end
 
     return helpers
@@ -879,10 +904,16 @@ function M._create_journal_content_with_carryover(target_dir, journal_type)
     if prev_path then
         local prev_content = helpers.read_file(prev_path)
         if prev_content then
-            for _, section in ipairs(journal_config.sections) do
+            -- Extract ALL sections from the previous journal, not just configured ones
+            local all_sections = helpers.extract_all_sections(prev_content)
+            
+            -- Look for unfinished tasks in all sections found
+            for _, section in ipairs(all_sections) do
                 local tasks = helpers.extract_unfinished_tasks(prev_content, section)
-                section_tasks[section] = tasks
-                total_carried_tasks = total_carried_tasks + (tasks and #tasks or 0)
+                if tasks and #tasks > 0 then
+                    section_tasks[section] = tasks
+                    total_carried_tasks = total_carried_tasks + #tasks
+                end
             end
         end
     end
@@ -903,6 +934,7 @@ function M._create_journal_content_with_carryover(target_dir, journal_type)
     -- Generate only body content - ZK handles frontmatter via ~/.config/zk templates
     local content_parts = {}
 
+    -- Start with configured sections (maintain template structure)
     for _, section in ipairs(journal_config.sections) do
         table.insert(content_parts, "## " .. section)
         local tasks = section_tasks[section]
@@ -910,6 +942,26 @@ function M._create_journal_content_with_carryover(target_dir, journal_type)
             table.insert(content_parts, table.concat(tasks, "\n"))
             table.insert(content_parts, "")
         else
+            table.insert(content_parts, "")
+        end
+    end
+
+    -- Add any custom sections that had carried over tasks
+    -- (sections not in the configured template)
+    for section, tasks in pairs(section_tasks) do
+        -- Check if this section is already in the configured sections
+        local is_configured = false
+        for _, configured_section in ipairs(journal_config.sections) do
+            if configured_section == section then
+                is_configured = true
+                break
+            end
+        end
+
+        -- If it's a custom section with tasks, add it
+        if not is_configured and tasks and #tasks > 0 then
+            table.insert(content_parts, "## " .. section)
+            table.insert(content_parts, table.concat(tasks, "\n"))
             table.insert(content_parts, "")
         end
     end

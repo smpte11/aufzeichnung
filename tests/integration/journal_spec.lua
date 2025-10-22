@@ -371,5 +371,47 @@ describe("Journal Management Integration", function()
             -- Re-enable for other tests
             config.journal.carryover_enabled = true
         end)
+
+        it("should carry over tasks from custom sections not in template", function()
+            local target_dir = temp_dir .. "/journal"
+            local utils = require('notes.utils')
+            local uuid1 = utils.generate_uuid_v7()
+            local uuid2 = utils.generate_uuid_v7()
+
+            -- Create previous journal with a custom section "Action Items"
+            -- that is NOT in the configured template sections
+            local prev_date = os.date("%Y-%m-%d", os.time() - 86400)
+            local prev_file = string.format("%s/perso-%s.md", target_dir, prev_date)
+
+            local prev_content = {
+                "---",
+                "title: Previous Journal",
+                "---",
+                "",
+                "## Action Items",
+                "",
+                string.format("- [x] Completed custom task [ ](task://%s)", uuid1),
+                string.format("- [-] In progress custom task [ ](task://%s)", uuid2),
+                "",
+                "## What is my main goal for today?",
+                "",
+            }
+
+            local file = io.open(prev_file, "w")
+            file:write(table.concat(prev_content, "\n"))
+            file:close()
+
+            -- Generate new journal with carryover
+            local content = notes._create_journal_content_with_carryover(target_dir, "personal")
+
+            -- Completed task should NOT be carried over
+            assert.is_false(string.find(content, uuid1, 1, true) ~= nil)
+
+            -- In-progress task from custom section SHOULD be carried over
+            assert.is_true(string.find(content, uuid2, 1, true) ~= nil)
+
+            -- Custom section header should also be present
+            assert.is_true(content:match("## Action Items") ~= nil)
+        end)
     end)
 end)
