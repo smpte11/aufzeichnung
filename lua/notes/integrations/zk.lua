@@ -1,6 +1,31 @@
 -- ⚡ ZK-NVIM INTEGRATION MODULE ⚡
 -- Optional integration with zk-nvim for advanced note management
 -- This module is only loaded if zk-nvim is available
+--
+-- DESIGN PHILOSOPHY:
+--   Leverage zk's native configuration system (groups, templates) for note creation
+--   Plugin handles task tracking and carryover logic, zk handles note formatting
+--
+-- CONFIGURATION:
+--   Regular notes: Use zk's default [note] configuration
+--   Journals: Use zk groups (personal-journal, work-journal) with content from plugin
+--
+-- EXPECTED ZK CONFIG (~/.config/zk/config.toml):
+--   [note]
+--   filename = "{{format-date now 'timestamp'}}-{{slug title}}"
+--   template = "default.md"
+--
+--   [group.personal-journal]
+--   paths = ["journal/daily"]
+--   [group.personal-journal.note]
+--   filename = "perso-{{format-date now '%Y-%m-%d'}}"
+--   template = "personal-journal.md"
+--
+--   [group.work-journal]
+--   paths = ["work"]
+--   [group.work-journal.note]
+--   filename = "work-{{format-date now '%Y-%m-%d'}}"
+--   template = "work-journal.md"
 
 local M = {}
 
@@ -231,6 +256,27 @@ end
 -- ═══════════════════════════════════════════════════════════════════════
 -- 📝 COMMANDS
 -- ═══════════════════════════════════════════════════════════════════════
+--
+-- TEMPLATE REQUIREMENTS:
+--
+-- 1. ~/.config/zk/templates/default.md (for regular notes)
+--    # {{title}}
+--    
+--    {{content}}
+--
+-- 2. ~/.config/zk/templates/personal-journal.md
+--    # {{format-date now "%Y-%m-%d"}} - Personal Journal
+--    
+--    {{content}}
+--
+-- 3. ~/.config/zk/templates/work-journal.md
+--    # {{format-date now "%Y-%m-%d"}} - Work Journal
+--    
+--    {{content}}
+--
+-- The plugin generates the body content (with task carryover) which templates
+-- insert via {{content}}. This keeps formatting/frontmatter in zk templates
+-- while keeping complex carryover logic in the plugin.
 
 function M._register_commands(config)
     local commands = require("zk.commands")
@@ -250,13 +296,11 @@ function M._register_commands(config)
     commands.add("ZkNewJournal", function(options)
         M._pick_journal_type(function(journal_type)
             M._pick_directory(config.directories.notebook, function(dir)
-                local journal_config = config.journal.daily_template[journal_type]
-                local date = os.date("%Y-%m-%d")
-                local title = journal_config.prefix .. "-" .. date
                 local target_dir = config.directories.notebook .. "/" .. dir
                 local content = M.notes._create_journal_content_with_carryover(target_dir, journal_type)
+                local group = journal_type == "personal" and "personal-journal" or "work-journal"
 
-                M.zk.new({ dir = dir, title = title, content = content })
+                M.zk.new({ dir = dir, group = group, content = content })
             end)
         end)
     end)
@@ -264,25 +308,19 @@ function M._register_commands(config)
     -- Legacy commands kept for backward compatibility and quick shortcuts
     commands.add("ZkNewDailyJournal", function(options)
         M._pick_directory(config.directories.notebook, function(dir)
-            local journal_config = config.journal.daily_template.personal
-            local date = os.date("%Y-%m-%d")
-            local title = journal_config.prefix .. "-" .. date
             local target_dir = config.directories.notebook .. "/" .. dir
             local content = M.notes._create_journal_content_with_carryover(target_dir, "personal")
 
-            M.zk.new({ dir = dir, title = title, content = content })
+            M.zk.new({ dir = dir, group = "personal-journal", content = content })
         end)
     end)
 
     commands.add("ZkNewWorkJournal", function(options)
         M._pick_directory(config.directories.notebook, function(dir)
-            local journal_config = config.journal.daily_template.work
-            local date = os.date("%Y-%m-%d")
-            local title = journal_config.prefix .. "-" .. date
             local target_dir = config.directories.notebook .. "/" .. dir
             local content = M.notes._create_journal_content_with_carryover(target_dir, "work")
 
-            M.zk.new({ dir = dir, title = title, content = content })
+            M.zk.new({ dir = dir, group = "work-journal", content = content })
         end)
     end)
 end
