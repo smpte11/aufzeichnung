@@ -22,7 +22,7 @@
 --   template = "personal-journal.md"
 --
 --   [group.work-journal]
---   paths = ["work"]
+--   paths = ["work/journal"]
 --   [group.work-journal.note]
 --   filename = "work-{{format-date now '%Y-%m-%d'}}"
 --   template = "work-journal.md"
@@ -287,7 +287,8 @@ function M._register_commands(config)
             local title = vim.fn.input("Title: ")
             if title == "" then return end
 
-            M.zk.new({ dir = dir, title = title })
+            -- Use default template from zk config [note] section
+            M.zk.new({ dir = dir, title = title, template = "default.md" })
         end)
     end)
 
@@ -316,12 +317,12 @@ function M._register_commands(config)
     end)
 
     commands.add("ZkNewWorkJournal", function(options)
-        M._pick_directory(config.directories.notebook, function(dir)
-            local target_dir = config.directories.notebook .. "/" .. dir
-            local content = M.notes._create_journal_content_with_carryover(target_dir, "work")
+        -- Default to work/journal directory for work journals
+        local dir = "work/journal"
+        local target_dir = config.directories.notebook .. "/" .. dir
+        local content = M.notes._create_journal_content_with_carryover(target_dir, "work")
 
-            M.zk.new({ dir = dir, group = "work-journal", content = content })
-        end)
+        M.zk.new({ dir = dir, group = "work-journal", content = content })
     end)
 end
 
