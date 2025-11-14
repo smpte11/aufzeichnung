@@ -495,6 +495,61 @@ function M._run_database_migrations(db)
         end
     end
 
+    -- Migration 2: Add content_hash column if it doesn't exist
+    if not column_exists(db, "task_events", "content_hash") then
+        notify("🔄 Running database migration: Adding content_hash column", "info", "database_operations")
+
+        -- Add the content_hash column (nullable) and create its index for faster lookups
+        local success, err = pcall(function()
+            db:execute("ALTER TABLE task_events ADD COLUMN content_hash TEXT")
+            db:execute("CREATE INDEX IF NOT EXISTS idx_content_hash ON task_events(content_hash)")
+            
+            -- Backfill hashes for existing records
+            notify("🔄 Backfilling content hashes for existing tasks...", "info", "database_operations")
+            
+            -- Get all records without a hash
+            local records = db:eval([[
+                SELECT event_id, task_text
+                FROM task_events
+                WHERE content_hash IS NULL OR content_hash = ''
+            ]])
+            
+            if records and #records > 0 then
+                -- Update each record with its calculated hash
+                local updated_count = 0
+                for _, record in ipairs(records) do
+                    local hash = utils.simple_hash(record.task_text or "")
+                    db:eval("UPDATE task_events SET content_hash = ? WHERE event_id = ?", { hash, record.event_id })
+                    updated_count = updated_count + 1
+                end
+                
+                notify(string.format("✅ Backfilled hashes for %d existing task events", updated_count), "info", "database_operations")
+            end
+        end)
+
+        if success then
+            notify("✅ Database migration completed: content_hash column and index added", "info", "database_operations")
+        else
+            notify(string.format("❌ Database migration failed: %s", tostring(err)), "error", "database_operations")
+        end
+    else
+        -- Migration 2.5: Fix any records with NULL content_hash (defensive repair)
+        local records_to_fix = db:eval([[
+            SELECT event_id, task_text
+            FROM task_events
+            WHERE content_hash IS NULL OR content_hash = ''
+        ]])
+        
+        if records_to_fix and type(records_to_fix) == "table" and #records_to_fix > 0 then
+            notify(string.format("🔧 Fixing %d records with missing content_hash", #records_to_fix), "info", "database_operations")
+            
+            for _, record in ipairs(records_to_fix) do
+                local hash = utils.simple_hash(record.task_text or "")
+                db:eval("UPDATE task_events SET content_hash = ? WHERE event_id = ?", { hash, record.event_id })
+            end
+        end
+    end
+
     -- Future migrations can be added here as needed
 end
 
@@ -648,6 +703,9 @@ function M._track_tasks_on_save(bufnr)
     local new_tasks = 0
     local updated_tasks = 0
     local completed_tasks = 0
+    
+    -- Track what we've processed in this save to avoid duplicates within same buffer
+    local processed_in_this_save = {}
 
     for line_num, line_content in ipairs(lines) do
         -- First check if line contains a task URI (this is the only guaranteed part)
@@ -686,73 +744,95 @@ function M._track_tasks_on_save(bufnr)
 
     -- Process tasks (with deduplication to prevent duplicate events)
     for _, task in ipairs(tasks) do
-        -- Check if task exists and get last known state, event_type, and timestamp
+        -- Calculate content hash for the task text
+        local content_hash = utils.simple_hash(task.text)
+        
+        -- Create a unique key for this task state in this save operation
+        local task_key = string.format("%s:%s:%s:%s", 
+            task.uuid, 
+            task.state, 
+            content_hash,
+            task.parent_uuid or "")
+        
+        -- Skip if we've already processed this exact task in this save
+        if processed_in_this_save[task_key] then
+            goto continue
+        end
+        
+        -- Check if task exists and get last known state, hash, parent_id
+        -- Use both timestamp and event_id for reliable ordering
         local existing = db:eval([[
-            SELECT COUNT(*) as count, state, task_text, event_type, timestamp 
+            SELECT COUNT(*) as count, state, task_text, parent_id, content_hash
             FROM task_events 
             WHERE task_id = ? 
-            ORDER BY timestamp DESC 
+            ORDER BY event_id DESC 
             LIMIT 1
         ]], { task.uuid })
 
         if not existing or #existing == 0 or existing[1].count == 0 then
-            -- New task
+            -- New task - store with content hash
+            if config.advanced and config.advanced.debug_mode then
+                print(string.format("INSERT NEW: uuid=%s, parent=%s, hash=%s", 
+                    task.uuid:sub(1,8), 
+                    tostring(task.parent_uuid or "nil"),
+                    content_hash))
+            end
+            
+            -- Ensure parent_uuid is never nil to avoid parameter shifting
+            local parent_id_value = task.parent_uuid or ""
+            
             db:eval([[
-				INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id)
-				VALUES (?, ?, ?, ?, ?, ?, ?)
-			]], { task.uuid, "task_created", os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, task.parent_uuid })
+				INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id, content_hash)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			]], { task.uuid, "task_created", os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, parent_id_value, content_hash })
+            
+            -- Mark as processed in this save
+            processed_in_this_save[task_key] = true
             new_tasks = new_tasks + 1
         else
-            -- Get last event details
+            -- Get last event details - use named column access for safety
             local last_state = existing[1].state
-            local last_text = existing[1].task_text
-            local last_event_type = existing[1].event_type
-            local last_timestamp = existing[1].timestamp
+            local last_parent_id = existing[1].parent_id
+            local last_hash = existing[1].content_hash
+            
+            -- Debug: verify we're getting the right values
+            if config.advanced and config.advanced.debug_mode then
+                print(string.format("  RAW DB: state=%s, parent_id=%s, content_hash=%s, task_text=%s",
+                    tostring(existing[1].state),
+                    tostring(existing[1].parent_id),
+                    tostring(existing[1].content_hash),
+                    tostring(existing[1].task_text and existing[1].task_text:sub(1, 20) or "nil")))
+            end
+            
+            -- Ensure hash values are strings for comparison
+            -- Handle nil/empty cases from pre-migration records
+            last_hash = (last_hash and last_hash ~= "") and last_hash or utils.simple_hash(existing[1].task_text or "")
+            
+            -- Detect changes using hash comparison for content and direct comparison for metadata
+            local state_changed = (last_state ~= task.state)
+            local content_changed = (last_hash ~= content_hash)
+            
+            -- Check metadata changes (parent_id from task URI)
+            -- Normalize to strings for consistent comparison
+            local last_parent = tostring(last_parent_id or "")
+            local current_parent = tostring(task.parent_uuid or "")
+            local metadata_changed = (last_parent ~= current_parent)
 
-            -- Improved text normalization: trim whitespace, normalize multiple spaces, remove extra newlines
-            local function normalize_text(text)
-                if not text then return "" end
-                return text
-                    :gsub("^%s+", "")      -- trim leading whitespace
-                    :gsub("%s+$", "")      -- trim trailing whitespace
-                    :gsub("%s+", " ")      -- normalize multiple spaces to single space
-                    :gsub("\n+", " ")      -- replace newlines with space
+            -- Debug output (temporary - remove after testing)
+            if config.advanced and config.advanced.debug_mode then
+                print(string.format("DEBUG Task %s: state_changed=%s, content_changed=%s, metadata_changed=%s",
+                    task.uuid:sub(1, 8), tostring(state_changed), tostring(content_changed), tostring(metadata_changed)))
+                print(string.format("  Last: state=%s, hash=%s, parent=%s", last_state or "nil", last_hash or "nil", last_parent))
+                print(string.format("  Curr: state=%s, hash=%s, parent=%s", task.state, content_hash, current_parent))
             end
 
-            local current_text_normalized = normalize_text(task.text)
-            local stored_text_normalized = normalize_text(last_text)
-
-            local state_changed = last_state ~= task.state
-            local text_changed = stored_text_normalized ~= current_text_normalized
-
-            -- Skip if nothing has changed at all
-            if not state_changed and not text_changed then
+            -- Skip if nothing has changed
+            -- Hash-based comparison gives us exact change detection
+            if not state_changed and not content_changed and not metadata_changed then
                 goto continue
             end
-            
-            -- Check if we recently recorded this exact state+text combination using normalized comparison
-            -- This prevents duplicate events when the DB has stale data or text varies slightly
-            local recent_events = db:eval([[
-                SELECT state, task_text, timestamp
-                FROM task_events 
-                WHERE task_id = ? 
-                  AND timestamp > datetime('now', '-2 minutes')
-                ORDER BY timestamp DESC 
-            ]], { task.uuid })
-            
-            if recent_events and type(recent_events) == "table" and #recent_events > 0 then
-                for _, recent_event in ipairs(recent_events) do
-                    local recent_state = recent_event.state
-                    local recent_text_normalized = normalize_text(recent_event.task_text)
-                    
-                    -- If we find a recent event with the exact same state and text, skip
-                    if recent_state == task.state and recent_text_normalized == current_text_normalized then
-                        goto continue
-                    end
-                end
-            end
 
-            -- Determine event type
+            -- Determine event type based on what changed
             local event_type = "task_updated"
             local should_count_as_completed = false
             
@@ -764,13 +844,20 @@ function M._track_tasks_on_save(bufnr)
             elseif task.state == "IN_PROGRESS" and last_state ~= "IN_PROGRESS" then
                 event_type = "task_updated"
             end
+            -- Note: content_changed and metadata_changed already result in "task_updated"
 
-            -- Only record if this represents a genuine change
+            -- Record the change with updated hash
+            -- Ensure parent_uuid is never nil to avoid parameter shifting
+            local parent_id_value = task.parent_uuid or ""
+            
             db:eval([[
-                INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ]], { task.uuid, event_type, os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, task.parent_uuid })
+                INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id, content_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ]], { task.uuid, event_type, os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, parent_id_value, content_hash })
                 
+            -- Mark as processed in this save
+            processed_in_this_save[task_key] = true
+            
             -- Count for notification
             if should_count_as_completed then
                 completed_tasks = completed_tasks + 1
@@ -1000,10 +1087,16 @@ function M._record_carryover_events(section_tasks, journal_type, prev_filename)
                 local task_text = task_line:gsub("^%s*%- %[.-%] ", "")
                     :gsub("%s*%[ %]%(task://[^%)]*%)%s*$", "")
 
+                -- Calculate content hash for the task text
+                local content_hash = utils.simple_hash(task_text)
+                
+                -- Ensure parent_uuid is never nil to avoid parameter shifting
+                local parent_id_value = parent_uuid or ""
+
                 -- Record the carryover event
                 db:eval([[
-					INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id)
-					VALUES (?, ?, ?, ?, ?, ?, ?)
+					INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id, content_hash)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 				]], {
                     task_uuid,
                     "task_carried_over",
@@ -1011,7 +1104,8 @@ function M._record_carryover_events(section_tasks, journal_type, prev_filename)
                     task_text,
                     "CARRIED_OVER",
                     prev_filename,
-                    parent_uuid
+                    parent_id_value,
+                    content_hash
                 })
             end
         end

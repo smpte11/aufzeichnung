@@ -449,4 +449,38 @@ function M.moving_average(data, window_size)
 	return result
 end
 
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔐 HASH UTILITIES
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- Simple hash function for content change detection
+-- Uses Lua's built-in string functions to create a consistent hash
+-- This is NOT cryptographically secure, but perfect for detecting content changes
+-- @param content: string to hash (typically task title/text)
+-- @return: hexadecimal hash string
+function M.simple_hash(content)
+	if not content or type(content) ~= "string" then
+		return "0"
+	end
+	
+	-- Normalize content: trim whitespace and normalize spaces
+	local normalized = content
+		:gsub("^%s+", "")      -- trim leading whitespace
+		:gsub("%s+$", "")      -- trim trailing whitespace
+		:gsub("%s+", " ")      -- normalize multiple spaces
+		:gsub("\n+", " ")      -- replace newlines with space
+	
+	-- Simple hash using polynomial rolling hash (DJB2 algorithm)
+	-- This is fast, deterministic, and good enough for change detection
+	local hash = 5381
+	
+	for i = 1, #normalized do
+		local char = normalized:byte(i)
+		hash = ((hash * 33) + char) % 4294967296  -- Keep within 32-bit range
+	end
+	
+	-- Convert to hex string for readability in database
+	return string.format("%08x", hash)
+end
+
 return M
