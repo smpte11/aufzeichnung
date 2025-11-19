@@ -261,17 +261,17 @@ end
 --
 -- 1. ~/.config/zk/templates/default.md (for regular notes)
 --    # {{title}}
---    
+--
 --    {{content}}
 --
 -- 2. ~/.config/zk/templates/personal-journal.md
 --    # {{format-date now "%Y-%m-%d"}} - Personal Journal
---    
+--
 --    {{content}}
 --
 -- 3. ~/.config/zk/templates/work-journal.md
 --    # {{format-date now "%Y-%m-%d"}} - Work Journal
---    
+--
 --    {{content}}
 --
 -- The plugin generates the body content (with task carryover) which templates
@@ -364,17 +364,18 @@ function M.setup_keymaps(config)
             vim.tbl_extend("force", opts, { desc = "New work journal shortcut (zk)" }))
     end
 
-    -- Note browsing
+    -- Note browsing - all use picker for interactive search
     if mappings.open_notes then
         vim.keymap.set("n", prefix .. mappings.open_notes,
             "<Cmd>ZkNotes { sort = { 'modified' } }<CR>",
             vim.tbl_extend("force", opts, { desc = "Open notes (zk)" }))
     end
 
+    -- Changed: Use picker directly instead of input prompt
     if mappings.find_notes then
         vim.keymap.set("n", prefix .. mappings.find_notes,
-            "<Cmd>ZkNotes { sort = { 'modified' }, match = { vim.fn.input('Search: ') } }<CR>",
-            vim.tbl_extend("force", opts, { desc = "Find notes (zk)" }))
+            "<Cmd>ZkNotes { sort = { 'modified' } }<CR>",
+            vim.tbl_extend("force", opts, { desc = "Search notes in picker (zk)" }))
     end
 
     if mappings.browse_tags then
@@ -382,6 +383,55 @@ function M.setup_keymaps(config)
             "<Cmd>ZkTags<CR>",
             vim.tbl_extend("force", opts, { desc = "Browse tags (zk)" }))
     end
+
+    -- Link insertion - very common when writing notes
+    if mappings.insert_link then
+        vim.keymap.set("n", prefix .. mappings.insert_link,
+            "<Cmd>ZkInsertLink<CR>",
+            vim.tbl_extend("force", opts, { desc = "Insert link (zk)" }))
+
+        -- Visual mode: insert link around selection
+        vim.keymap.set("v", prefix .. mappings.insert_link,
+            ":'<,'>ZkInsertLinkAtSelection<CR>",
+            vim.tbl_extend("force", opts, { desc = "Insert link at selection (zk)" }))
+    end
+
+    -- Notebook management
+    if mappings.cd_notebook then
+        vim.keymap.set("n", prefix .. mappings.cd_notebook,
+            "<Cmd>ZkCd<CR>",
+            vim.tbl_extend("force", opts, { desc = "Cd to notebook root (zk)" }))
+    end
+
+    if mappings.reindex then
+        vim.keymap.set("n", prefix .. mappings.reindex,
+            "<Cmd>ZkIndex<CR>",
+            vim.tbl_extend("force", opts, { desc = "Reindex notebook (zk)" }))
+    end
+
+    -- New picker-based navigation commands
+    if mappings.backlinks then
+        vim.keymap.set("n", prefix .. mappings.backlinks,
+            "<Cmd>ZkBacklinks<CR>",
+            vim.tbl_extend("force", opts, { desc = "Show backlinks (zk)" }))
+    end
+
+    if mappings.links then
+        vim.keymap.set("n", prefix .. mappings.links,
+            "<Cmd>ZkLinks<CR>",
+            vim.tbl_extend("force", opts, { desc = "Show links (zk)" }))
+    end
+
+    if mappings.buffers then
+        vim.keymap.set("n", prefix .. mappings.buffers,
+            "<Cmd>ZkBuffers<CR>",
+            vim.tbl_extend("force", opts, { desc = "Show note buffers (zk)" }))
+    end
+
+    -- Visual mode: search for notes matching selection
+    vim.keymap.set("v", prefix .. (mappings.find_notes or "f"),
+        ":'<,'>ZkMatch<CR>",
+        vim.tbl_extend("force", opts, { desc = "Match selection in notes (zk)" }))
 end
 
 return M
