@@ -129,25 +129,25 @@ describe("notes.utils", function()
 
     describe("calculate_productivity_score", function()
         it("should calculate score with default weights", function()
-            local score = utils.calculate_productivity_score(5, 3, 1)
-            -- created=5*1, completed=3*2, carried_over=1*(-1) = 5+6-1 = 10
-            assert.are.equal(10, score)
+            local score = utils.calculate_productivity_score(5, 3)
+            -- created=5*1, completed=3*2 = 5+6 = 11
+            assert.are.equal(11, score)
         end)
 
         it("should calculate score with custom weights", function()
-            local weights = { created = 2, completed = 3, carried_over = -2 }
-            local score = utils.calculate_productivity_score(5, 3, 1, weights)
-            -- created=5*2, completed=3*3, carried_over=1*(-2) = 10+9-2 = 17
-            assert.are.equal(17, score)
+            local weights = { created = 2, completed = 3 }
+            local score = utils.calculate_productivity_score(5, 3, weights)
+            -- created=5*2, completed=3*3 = 10+9 = 19
+            assert.are.equal(19, score)
         end)
 
         it("should handle zero values", function()
-            local score = utils.calculate_productivity_score(0, 0, 0)
+            local score = utils.calculate_productivity_score(0, 0)
             assert.are.equal(0, score)
         end)
 
         it("should handle nil values as zero", function()
-            local score = utils.calculate_productivity_score(nil, nil, nil)
+            local score = utils.calculate_productivity_score(nil, nil)
             assert.are.equal(0, score)
         end)
     end)

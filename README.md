@@ -11,7 +11,6 @@ A Neovim plugin that tracks tasks across your markdown files, providing powerful
 - 📊 **Visualizations** - ASCII charts, histograms, pie charts, line plots, and tables
 - 🎯 **Analytics** - Detailed productivity insights and trend analysis
 - 🔄 **Task Counters** - Org-mode style progress counters for markdown headings
-- 📅 **Smart Carryover** - Automatically carry unfinished tasks to new journals
 - 🆔 **UUID v7 Support** - Time-ordered unique task identifiers
 - 👨‍👩‍👧‍👦 **Parent-Child Tasks** - Hierarchical task relationships
 
@@ -150,7 +149,7 @@ require("notes").setup({
     data = {
       date_format = "medium",  -- "short", "medium", "long", "relative"
       truncate_length = 30,
-      productivity_weights = { created = 1, completed = 2, carried_over = -1 }
+      productivity_weights = { created = 1, completed = 2 }
     },
     display = { use_emojis = true, show_debug = false }
   },
@@ -175,7 +174,6 @@ require("notes").setup({
         }
       }
     },
-    carryover_enabled = true,
   },
   
   -- ⌨️ Keybinding Configuration
@@ -222,7 +220,7 @@ require("notes").setup({
   notifications = {
     enabled = true,
     task_operations = true,
-    journal_carryover = true,
+
     database_operations = false,
     level = "info",
     duration = 3000,
@@ -377,7 +375,7 @@ Legend:
 - ✅ All visualization and dashboards
 - ✅ Task counters
 - ✅ Manual task creation with UUIDs
-- ✅ Journal carryover logic
+
 - ⚠️ You create markdown files manually (or with your preferred tool)
 - ⚠️ No automatic note/journal file creation
 - ⚠️ No note browsing/search commands
@@ -550,7 +548,7 @@ folder = "",          -- nf-fa-folder-open
 
 - **Task Events**: Used in activity logs and event tracking
   - `plus` - Task creation events
-  - `forward` - Task carryover events
+
   - `play` - Task resume events
   - `list` - Default/unknown events
 

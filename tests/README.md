@@ -44,7 +44,6 @@ Integration tests verify that components work together correctly:
 
 - **`journal_spec.lua`** - Journal management workflow
   - Journal content generation
-  - Task carryover between journals
   - Section-based task organization
   - Finding most recent journals
   - Configuration respect
@@ -172,7 +171,6 @@ Current test coverage focuses on:
 
 ✅ **Journal Management** (integration)
 - Content generation
-- Task carryover logic
 - Multi-section handling
 
 ## Continuous Integration

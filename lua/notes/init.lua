@@ -52,7 +52,7 @@ local default_config = {
         data = {
             date_format = "medium", -- "short", "medium", "long", "relative"
             truncate_length = 30,
-            productivity_weights = { created = 1, completed = 2, carried_over = -1 }
+            productivity_weights = { created = 1, completed = 2 }
         },
         display = { use_emojis = true, show_debug = false }
     },
@@ -77,7 +77,7 @@ local default_config = {
                 }
             }
         },
-        carryover_enabled = true, -- Carry unfinished tasks to new journals
+
     },
 
     -- ⌨️ Keybinding Configuration
@@ -125,7 +125,6 @@ local default_config = {
     notifications = {
         enabled = true,              -- Enable/disable all notifications
         task_operations = true,      -- Notify on task save/update operations
-        journal_carryover = true,    -- Notify when tasks are carried over to new journals
         database_operations = false, -- Notify on database creation/connection (verbose)
         level = "info",              -- Notification level: "error", "warn", "info", "debug"
         duration = 3000,             -- Duration in milliseconds (0 for no timeout)
@@ -160,8 +159,6 @@ local function notify(message, level, category)
 
     -- Check category-specific settings
     if category == "task_operations" and not config.notifications.task_operations then
-        return
-    elseif category == "journal_carryover" and not config.notifications.journal_carryover then
         return
     elseif category == "database_operations" and not config.notifications.database_operations then
         return
@@ -523,7 +520,8 @@ function M._run_database_migrations(db)
                     updated_count = updated_count + 1
                 end
 
-                notify(string.format("✅ Backfilled hashes for %d existing task events", updated_count), "info", "database_operations")
+                notify(string.format("✅ Backfilled hashes for %d existing task events", updated_count), "info",
+                    "database_operations")
             end
         end)
 
@@ -541,7 +539,8 @@ function M._run_database_migrations(db)
         ]])
 
         if records_to_fix and type(records_to_fix) == "table" and #records_to_fix > 0 then
-            notify(string.format("🔧 Fixing %d records with missing content_hash", #records_to_fix), "info", "database_operations")
+            notify(string.format("🔧 Fixing %d records with missing content_hash", #records_to_fix), "info",
+                "database_operations")
 
             for _, record in ipairs(records_to_fix) do
                 local hash = utils.simple_hash(record.task_text or "")
@@ -773,7 +772,7 @@ function M._track_tasks_on_save(bufnr)
             -- New task - store with content hash
             if config.advanced and config.advanced.debug_mode then
                 print(string.format("INSERT NEW: uuid=%s, parent=%s, hash=%s",
-                    task.uuid:sub(1,8),
+                    task.uuid:sub(1, 8),
                     tostring(task.parent_uuid or "nil"),
                     content_hash))
             end
@@ -784,7 +783,9 @@ function M._track_tasks_on_save(bufnr)
             db:eval([[
 				INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id, content_hash)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			]], { task.uuid, "task_created", os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, parent_id_value, content_hash })
+			]],
+                { task.uuid, "task_created", os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath,
+                    parent_id_value, content_hash })
 
             -- Mark as processed in this save
             processed_in_this_save[task_key] = true
@@ -822,7 +823,8 @@ function M._track_tasks_on_save(bufnr)
             if config.advanced and config.advanced.debug_mode then
                 print(string.format("DEBUG Task %s: state_changed=%s, content_changed=%s, metadata_changed=%s",
                     task.uuid:sub(1, 8), tostring(state_changed), tostring(content_changed), tostring(metadata_changed)))
-                print(string.format("  Last: state=%s, hash=%s, parent=%s", last_state or "nil", last_hash or "nil", last_parent))
+                print(string.format("  Last: state=%s, hash=%s, parent=%s", last_state or "nil", last_hash or "nil",
+                    last_parent))
                 print(string.format("  Curr: state=%s, hash=%s, parent=%s", task.state, content_hash, current_parent))
             end
 
@@ -853,7 +855,9 @@ function M._track_tasks_on_save(bufnr)
             db:eval([[
                 INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id, content_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ]], { task.uuid, event_type, os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, parent_id_value, content_hash })
+            ]],
+                { task.uuid, event_type, os.date("%Y-%m-%d %H:%M:%S"), task.text, task.state, filepath, parent_id_value,
+                    content_hash })
 
             -- Mark as processed in this save
             processed_in_this_save[task_key] = true
@@ -976,145 +980,7 @@ function M._create_journal_helpers()
     return helpers
 end
 
-function M._create_journal_content_with_carryover(target_dir, journal_type)
-    if not config.journal.carryover_enabled then
-        return M._create_basic_journal_content(journal_type)
-    end
-
-    local helpers = M._create_journal_helpers()
-    local journal_config = config.journal.daily_template[journal_type]
-    local prev_path = helpers.get_most_recent_journal_note(target_dir, journal_config.prefix)
-
-    local section_tasks = {}
-    local total_carried_tasks = 0
-
-    if prev_path then
-        local prev_content = helpers.read_file(prev_path)
-        if prev_content then
-            -- Extract ALL sections from the previous journal, not just configured ones
-            local all_sections = helpers.extract_all_sections(prev_content)
-
-            -- Look for unfinished tasks in all sections found
-            for _, section in ipairs(all_sections) do
-                local tasks = helpers.extract_unfinished_tasks(prev_content, section)
-                if tasks and #tasks > 0 then
-                    section_tasks[section] = tasks
-                    total_carried_tasks = total_carried_tasks + #tasks
-                end
-            end
-        end
-    end
-
-    -- Record carryover events in database and show notification
-    if total_carried_tasks > 0 and prev_path then
-        local prev_filename = vim.fn.fnamemodify(prev_path, ":t")
-
-        -- Track carryover events in database for analytics
-        M._record_carryover_events(section_tasks, journal_type, prev_filename)
-
-        notify(string.format("📦 Carried over %d unfinished task%s from %s",
-            total_carried_tasks,
-            total_carried_tasks == 1 and "" or "s",
-            prev_filename), "info", "journal_carryover")
-    end
-
-    -- Generate only body content - ZK handles frontmatter via ~/.config/zk templates
-    local content_parts = {}
-
-    -- Start with configured sections (maintain template structure)
-    for _, section in ipairs(journal_config.sections) do
-        table.insert(content_parts, "## " .. section)
-        local tasks = section_tasks[section]
-        if tasks and #tasks > 0 then
-            table.insert(content_parts, table.concat(tasks, "\n"))
-            table.insert(content_parts, "")
-        else
-            table.insert(content_parts, "")
-        end
-    end
-
-    -- Add any custom sections that had carried over tasks
-    -- (sections not in the configured template)
-    for section, tasks in pairs(section_tasks) do
-        -- Check if this section is already in the configured sections
-        local is_configured = false
-        for _, configured_section in ipairs(journal_config.sections) do
-            if configured_section == section then
-                is_configured = true
-                break
-            end
-        end
-
-        -- If it's a custom section with tasks, add it
-        if not is_configured and tasks and #tasks > 0 then
-            table.insert(content_parts, "## " .. section)
-            table.insert(content_parts, table.concat(tasks, "\n"))
-            table.insert(content_parts, "")
-        end
-    end
-
-    return table.concat(content_parts, "\n")
-end
-
--- Record carryover events in database for analytics
-function M._record_carryover_events(section_tasks, journal_type, prev_filename)
-    -- Get the appropriate tracking type for this journal type
-    local track_type = journal_type == "work" and "work" or "personal"
-    local db = M._get_task_database(track_type)
-
-    if not db then
-        return -- Silently skip if no database available
-    end
-
-    -- Record each carried over task as a database event
-    for section, tasks in pairs(section_tasks) do
-        if tasks and #tasks > 0 then
-            for _, task_line in ipairs(tasks) do
-                -- Extract task UUID and parent UUID if present
-                local task_uri = task_line:match("%(task://([^%)]+)%)")
-                local task_uuid, parent_uuid = nil, nil
-
-                if task_uri then
-                    task_uuid, parent_uuid = M._parse_task_uri(task_uri)
-                end
-
-                if not task_uuid then
-                    -- Generate UUID for tasks that don't have one
-                    task_uuid = utils.generate_uuid_v7()
-                end
-
-                -- Extract task text (remove checkbox and UUID parts)
-                local task_text = task_line:gsub("^%s*%- %[.-%] ", "")
-                    :gsub("%s*%[ %]%(task://[^%)]*%)%s*$", "")
-
-                -- Calculate content hash for the task text
-                local content_hash = utils.simple_hash(task_text)
-
-                -- Ensure parent_uuid is never nil to avoid parameter shifting
-                local parent_id_value = parent_uuid or ""
-
-                -- Record the carryover event
-                db:eval([[
-					INSERT INTO task_events (task_id, event_type, timestamp, task_text, state, journal_file, parent_id, content_hash)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-				]], {
-                    task_uuid,
-                    "task_carried_over",
-                    os.date("%Y-%m-%d %H:%M:%S"),
-                    task_text,
-                    "CARRIED_OVER",
-                    prev_filename,
-                    parent_id_value,
-                    content_hash
-                })
-            end
-        end
-    end
-
-    -- No need for summary records - analytics aggregate individual records at query time
-end
-
-function M._create_basic_journal_content(journal_type)
+function M.create_journal_content(journal_type)
     local journal_config = config.journal.daily_template[journal_type]
 
     -- Generate only body content - ZK handles frontmatter via ~/.config/zk templates
@@ -2059,28 +1925,6 @@ function M.dashboard(track_type, opts)
         end
         add_line("")
 
-        -- Carryover analysis (NEW!)
-        add_line("📦 CARRYOVER ANALYSIS (Last 7 days)")
-        add_line("─" .. string.rep("─", 35))
-        local carryover_results = M._get_carryover_analysis_data(track_type, 7)
-        if carryover_results and #carryover_results > 0 then
-            local carryover_chart = plot.histogram(carryover_results, {
-                width = 45,
-                show_values = true,
-                title = "Tasks Carried Over by Day"
-            })
-            if type(carryover_chart) == "table" then
-                for _, line in ipairs(carryover_chart) do
-                    add_line(line)
-                end
-            else
-                add_line(tostring(carryover_chart))
-            end
-        else
-            add_line("📦 No carryover data found (good job staying on top of tasks!)")
-        end
-        add_line("")
-
         -- Recent activity summary
         add_line("📋 RECENT ACTIVITY SUMMARY")
         add_line("─" .. string.rep("─", 30))
@@ -2488,15 +2332,13 @@ function M._get_productivity_trend_data(track_type, days)
 		SELECT
 			date(timestamp) as day,
 			(%d * SUM(CASE WHEN event_type = 'task_completed' THEN 1 ELSE 0 END) +
-			 %d * SUM(CASE WHEN event_type = 'task_created' THEN 1 ELSE 0 END) +
-			 %d * SUM(CASE WHEN event_type = 'task_carried_over' THEN 1 ELSE 0 END)) as productivity_score
+			 %d * SUM(CASE WHEN event_type = 'task_created' THEN 1 ELSE 0 END)) as productivity_score
 		FROM task_events
 		WHERE date(timestamp) >= date('now', '-%d days')
 		GROUP BY date(timestamp)
 		ORDER BY day
 	]], config.visualization.data.productivity_weights.completed,
         config.visualization.data.productivity_weights.created,
-        config.visualization.data.productivity_weights.carried_over,
         days)
 
     local results = db:eval(sql)
@@ -2595,61 +2437,6 @@ function M._get_smart_previous_day_data(track_type)
     return nil
 end
 
--- Get carryover analysis data for dashboard visualization
-function M._get_carryover_analysis_data(track_type, days)
-    local db = M._get_task_database(track_type)
-    if not db then return nil end
-
-    local sql = string.format([[
-		SELECT
-			date(timestamp) as day,
-			COUNT(*) as carryover_count
-		FROM task_events
-		WHERE event_type = 'task_carried_over' AND date(timestamp) >= date('now', '-%d days')
-		GROUP BY date(timestamp)
-		ORDER BY day
-	]], days)
-
-    local results = db:eval(sql)
-    if not results or type(results) ~= "table" or #results == 0 then
-        return nil
-    end
-
-    return utils.sql_to_chart_data(results, "day", "carryover_count")
-end
-
--- Get today's carryover impact for detailed analysis
-function M._get_today_carryover_impact(track_type)
-    local db = M._get_task_database(track_type)
-    if not db then return nil end
-
-    local sql = [[
-		SELECT COUNT(*) as carried_in
-		FROM task_events
-		WHERE event_type = 'task_carried_over' AND date(timestamp) = date('now')
-	]]
-
-    local results = db:eval(sql)
-    if not results or type(results) ~= "table" or #results == 0 then
-        return nil
-    end
-
-    local carried_in = results[1].carried_in
-    if carried_in == 0 then return nil end
-
-    -- Calculate productivity impact based on carryover weight (-1)
-    local productivity_impact = carried_in * config.visualization.data.productivity_weights.carried_over
-    local impact_text = productivity_impact < -5 and "⚠️ High carryover load" or
-        productivity_impact < -2 and "📊 Moderate carryover" or
-        "✅ Light carryover"
-
-    return {
-        carried_in = carried_in,
-        productivity_impact = productivity_impact,
-        impact_text = impact_text
-    }
-end
-
 -- ═══════════════════════════════════════════════════════════════════════
 -- 🎨 SPECIALIZED CREATIVE DASHBOARDS
 -- ═══════════════════════════════════════════════════════════════════════
@@ -2735,16 +2522,6 @@ function M.today_dashboard(track_type)
             add_line("🎯 No tasks completed today yet")
         end
         add_line("")
-
-        -- Today's carryover impact (NEW!)
-        local carryover_impact = M._get_today_carryover_impact(track_type)
-        if carryover_impact then
-            add_line("📦 TODAY'S CARRYOVER IMPACT")
-            add_line("─" .. string.rep("─", 28))
-            add_line(string.format("  Tasks carried in: %d", carryover_impact.carried_in))
-            add_line(string.format("  Impact on productivity: %s", carryover_impact.impact_text))
-            add_line("")
-        end
     end
 
     add_line("⚡ Today's Focus: Make it count!")
@@ -3073,11 +2850,8 @@ function M.help()
         "-" .. string.rep("-", 20),
         "  Task operations:     " ..
         (config.notifications and config.notifications.task_operations and "✅ Enabled" or "❌ Disabled"),
-        "  Journal carryover:   " ..
-        (config.notifications and config.notifications.journal_carryover and "✅ Enabled" or "❌ Disabled"),
         "  Examples:",
         "    📝 2 new tasks, ✅ 1 completed in work-2024-09-22.md",
-        "    📦 Carried over 3 unfinished tasks from perso-2024-09-21.md",
         "",
         "🔧 TROUBLESHOOTING",
         "-" .. string.rep("-", 20),
@@ -3270,7 +3044,6 @@ function M.examples()
         "notifications = {",
         "  enabled = true,           -- Master toggle",
         "  task_operations = true,   -- Task save/update notifications",
-        "  journal_carryover = true, -- Task carryover notifications",
         "  level = 'info',           -- info, warn, error",
         "  duration = 3000           -- Display time in ms (0 = no timeout)",
         "}",

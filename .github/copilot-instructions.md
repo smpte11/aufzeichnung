@@ -127,12 +127,6 @@ end
 ### Debounced Virtual Text Updates
 Task counter module uses debounced refresh with `vim.defer_fn()` to avoid excessive recomputation on rapid buffer changes.
 
-### Journal Carryover Logic
-- Parse previous journal for unfinished tasks (`[ ]`, `[-]` states)
-- Group by markdown sections 
-- Generate new journal with carryover tasks
-- Record carryover events in database for analytics
-
 ## Common Extension Points
 
 - **New tracking types**: Add to `config.tracking` with filename patterns and database path

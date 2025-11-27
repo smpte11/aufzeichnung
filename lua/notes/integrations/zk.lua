@@ -4,7 +4,7 @@
 --
 -- DESIGN PHILOSOPHY:
 --   Leverage zk's native configuration system (groups, templates) for note creation
---   Plugin handles task tracking and carryover logic, zk handles note formatting
+--   Plugin handles task tracking logic, zk handles note formatting
 --
 -- CONFIGURATION:
 --   Regular notes: Use zk's default [note] configuration
@@ -220,7 +220,7 @@ function M._pick_journal_type(callback)
     local utils = require('notes.utils')
     local items = {
         { text = utils.icons.file_text .. " Personal Journal", type = "personal" },
-        { text = utils.icons.briefcase .. " Work Journal", type = "work" }
+        { text = utils.icons.briefcase .. " Work Journal",     type = "work" }
     }
 
     MiniPick.start({
@@ -274,9 +274,9 @@ end
 --
 --    {{content}}
 --
--- The plugin generates the body content (with task carryover) which templates
--- insert via {{content}}. This keeps formatting/frontmatter in zk templates
--- while keeping complex carryover logic in the plugin.
+-- The plugin generates the body content which templates insert via {{content}}.
+-- This keeps formatting/frontmatter in zk templates while keeping journal
+-- structure logic in the plugin.
 
 function M._register_commands(config)
     local commands = require("zk.commands")
@@ -298,7 +298,7 @@ function M._register_commands(config)
         M._pick_journal_type(function(journal_type)
             M._pick_directory(config.directories.notebook, function(dir)
                 local target_dir = config.directories.notebook .. "/" .. dir
-                local content = M.notes._create_journal_content_with_carryover(target_dir, journal_type)
+                local content = M.notes.create_journal_content(journal_type)
                 local group = journal_type == "personal" and "personal-journal" or "work-journal"
 
                 M.zk.new({ dir = dir, group = group, content = content })
@@ -310,7 +310,7 @@ function M._register_commands(config)
     commands.add("ZkNewDailyJournal", function(options)
         M._pick_directory(config.directories.notebook, function(dir)
             local target_dir = config.directories.notebook .. "/" .. dir
-            local content = M.notes._create_journal_content_with_carryover(target_dir, "personal")
+            local content = M.notes.create_journal_content("personal")
 
             M.zk.new({ dir = dir, group = "personal-journal", content = content })
         end)
@@ -320,7 +320,7 @@ function M._register_commands(config)
         -- Default to work/journal directory for work journals
         local dir = "work/journal"
         local target_dir = config.directories.notebook .. "/" .. dir
-        local content = M.notes._create_journal_content_with_carryover(target_dir, "work")
+        local content = M.notes.create_journal_content("work")
 
         M.zk.new({ dir = dir, group = "work-journal", content = content })
     end)
