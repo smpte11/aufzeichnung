@@ -230,9 +230,7 @@ end
 
 function M.setup(user_config)
     if is_setup then
-        if config.advanced and config.advanced.debug_mode then
-            print("🔄 Notes module already set up, reconfiguring...")
-        end
+        -- (debug reconfiguration message removed)
     end
 
     -- Merge configuration
@@ -274,10 +272,7 @@ function M.setup(user_config)
     is_setup = true
 
     if config.advanced.debug_mode then
-        print("✅ Task tracking module setup complete!")
-        print("📁 Notebook directory:", config.directories.notebook)
-        print("📊 Tracking enabled for:", vim.tbl_keys(config.tracking))
-        print("🔌 zk-nvim integration:", M.zk_integration and "enabled" or "disabled")
+        -- debug_mode enabled (setup prints suppressed)
     end
 
     return config
@@ -711,8 +706,19 @@ function M._track_tasks_on_save(bufnr)
         local task_uri = line_content:match("task://([^%)]+)")
 
         if task_uri then
-            -- Now extract the task state and text (we know there's a URI, so this should work)
-            local state, task_text = line_content:match("^%s*%- %[([%-%sx ]?)%] (.-)%s%[")
+            -- Now extract the task state and text robustly:
+            -- Find the position of the task link and slice text up to it to avoid "[" in content breaking parsing
+            local state = line_content:match("^%s*%- %[([%-%sx ]?)%]")
+            local link_pos = line_content:find("%]%(%s*task://")
+            local task_text = nil
+            if state and link_pos then
+                -- Find end of checkbox "[ ] " or "[x] " => start of text is after the checkbox and a space
+                local text_start = line_content:find("%]%s+", 1)
+                if text_start then
+                    text_start = text_start + 1
+                    task_text = line_content:sub(text_start, link_pos - 1)
+                end
+            end
 
             if state and task_text then
                 -- Parse the URI to extract task_uuid and optional parent_uuid
@@ -809,44 +815,59 @@ function M._track_tasks_on_save(bufnr)
             -- Handle nil/empty cases from pre-migration records
             last_hash = (last_hash and last_hash ~= "") and last_hash or utils.simple_hash(existing[1].task_text or "")
 
-            -- Detect changes using hash comparison for content and direct comparison for metadata
+            -- Detect changes using hash comparison for content and direct comparison for URI (parent part)
             local state_changed = (last_state ~= task.state)
             local content_changed = (last_hash ~= content_hash)
 
-            -- Check metadata changes (parent_id from task URI)
+            -- Check URI changes (parent_id from task URI)
             -- Normalize to strings for consistent comparison
             local last_parent = tostring(last_parent_id or "")
             local current_parent = tostring(task.parent_uuid or "")
-            local metadata_changed = (last_parent ~= current_parent)
+            local uri_changed = (last_parent ~= current_parent)
+
+            -- State transition classification
+            local is_completion = state_changed and (last_state ~= "FINISHED") and (task.state == "FINISHED")
+            local is_reopen = state_changed and (last_state == "FINISHED") and (task.state ~= "FINISHED")
+            local is_state_transition = state_changed and not is_completion and not is_reopen
 
             -- Debug output (temporary - remove after testing)
             if config.advanced and config.advanced.debug_mode then
-                print(string.format("DEBUG Task %s: state_changed=%s, content_changed=%s, metadata_changed=%s",
-                    task.uuid:sub(1, 8), tostring(state_changed), tostring(content_changed), tostring(metadata_changed)))
+                print(string.format(
+                    "DEBUG Task %s: state_changed=%s, content_changed=%s, uri_changed=%s, completion=%s, reopen=%s",
+                    task.uuid:sub(1, 8), tostring(state_changed), tostring(content_changed), tostring(uri_changed),
+                    tostring(is_completion), tostring(is_reopen)))
                 print(string.format("  Last: state=%s, hash=%s, parent=%s", last_state or "nil", last_hash or "nil",
                     last_parent))
                 print(string.format("  Curr: state=%s, hash=%s, parent=%s", task.state, content_hash, current_parent))
             end
 
-            -- Skip if nothing has changed
-            -- Hash-based comparison gives us exact change detection
-            if not state_changed and not content_changed and not metadata_changed then
+            -- Skip if nothing has changed at all
+            if not content_changed and not uri_changed and not is_completion and not is_reopen and not is_state_transition then
                 goto continue
             end
 
             -- Determine event type based on what changed
-            local event_type = "task_updated"
+            local event_type = nil
             local should_count_as_completed = false
+            local should_count_as_reopened = false
+            local should_count_state_changed = false
 
-            if task.state == "FINISHED" and last_state ~= "FINISHED" then
+            if is_completion then
                 event_type = "task_completed"
                 should_count_as_completed = true
-            elseif task.state ~= "FINISHED" and last_state == "FINISHED" then
+            elseif is_reopen then
                 event_type = "task_reopened"
-            elseif task.state == "IN_PROGRESS" and last_state ~= "IN_PROGRESS" then
+                should_count_as_reopened = true
+            elseif content_changed or uri_changed then
                 event_type = "task_updated"
+            elseif is_state_transition then
+                event_type = "task_state_changed"
+                should_count_state_changed = true
             end
-            -- Note: content_changed and metadata_changed already result in "task_updated"
+
+            if not event_type then
+                goto continue
+            end
 
             -- Record the change with updated hash
             -- Ensure parent_uuid is never nil to avoid parameter shifting
@@ -866,14 +887,22 @@ function M._track_tasks_on_save(bufnr)
             if should_count_as_completed then
                 completed_tasks = completed_tasks + 1
             end
-            updated_tasks = updated_tasks + 1
+            if should_count_as_reopened then
+                reopened_tasks = (reopened_tasks or 0) + 1
+            end
+            if event_type == "task_updated" then
+                updated_tasks = updated_tasks + 1
+            end
+            if should_count_state_changed then
+                state_changed_tasks = (state_changed_tasks or 0) + 1
+            end
         end
 
         ::continue::
     end
 
     -- Show summary notification
-    if new_tasks > 0 or updated_tasks > 0 or completed_tasks > 0 then
+    if new_tasks > 0 or updated_tasks > 0 or completed_tasks > 0 or (reopened_tasks or 0) > 0 or (state_changed_tasks or 0) > 0 then
         local filename = vim.fn.fnamemodify(filepath, ":t")
         local messages = {}
 
@@ -883,8 +912,15 @@ function M._track_tasks_on_save(bufnr)
         if completed_tasks > 0 then
             table.insert(messages, string.format("✅ %d completed", completed_tasks))
         end
-        if updated_tasks > 0 and completed_tasks ~= updated_tasks then
-            table.insert(messages, string.format("🔄 %d updated", updated_tasks - completed_tasks))
+        if (reopened_tasks or 0) > 0 then
+            table.insert(messages, string.format("♻️ %d reopened", reopened_tasks))
+        end
+        if updated_tasks > 0 then
+            table.insert(messages, string.format("🔄 %d updated", updated_tasks))
+        end
+        if (state_changed_tasks or 0) > 0 then
+            table.insert(messages,
+                string.format("⏩ %d state change%s", state_changed_tasks, state_changed_tasks == 1 and "" or "s"))
         end
 
         local summary = table.concat(messages, ", ")
@@ -928,6 +964,9 @@ function M._create_journal_helpers()
     end
 
     function helpers.extract_unfinished_tasks(content, section)
+        -- Normalize newlines to LF to avoid Windows CRLF issues interfering with pattern matching
+        content = content:gsub("\r\n", "\n"):gsub("\r", "\n")
+
         local escaped_section = section:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
         local section_start = content:find("## " .. escaped_section)
         if not section_start then return {} end
@@ -941,40 +980,85 @@ function M._create_journal_helpers()
             content:sub(content_start, next_section_start - 1) or
             content:sub(content_start)
 
-        section_content = section_content:gsub("^%s+", ""):gsub("%s+$", "")
+        -- Only remove leading blank lines; keep internal spacing intact
+        section_content = section_content:gsub("^\n+", "")
 
         local tasks = {}
         if section_content == "" then return tasks end
 
+        -- Iterate lines (append newline to ensure last line processed even without trailing newline)
         for line in (section_content .. "\n"):gmatch("(.-)\n") do
-            line = line:gsub("^%s+", ""):gsub("%s+$", "")
-            -- Match unfinished tasks by looking at the FIRST checkbox (the task state)
-            -- Format: - [state] Task text [ ](task://...)
-            -- We want tasks where state is NOT x or X (i.e., not completed)
-            local checkbox = line:match("^%-%s*%[(.?)%]")
+            -- Skip frontmatter separators or empty lines explicitly
+            if line == "---" or line:match("^%s*$") then
+                goto continue
+            end
+
+            -- Preserve original line for order; use trimmed copy for matching
+            local match_line = line:gsub("^%s+", ""):gsub("%s+$", "")
+
+            -- Permissive bullet pattern: allow leading spaces and either '-' or '*'
+            local checkbox = match_line:match("^%s*[%-%*]%s*%[(.?)%]")
             if checkbox then
-                -- Task is unfinished if checkbox is not 'x' or 'X'
                 local is_finished = (checkbox == "x" or checkbox == "X")
                 if not is_finished then
                     table.insert(tasks, line)
                 end
             end
+
+            ::continue::
         end
 
         return tasks
     end
 
     -- Extract ALL sections from content (not just configured ones)
+    -- (Deprecated for carryover logic; kept for backward compatibility)
     function helpers.extract_all_sections(content)
         local sections = {}
-        -- Match ## at start of line or after newline
-        for section_name in content:gmatch("^## ([^\n]+)") do
-            table.insert(sections, section_name)
-        end
-        for section_name in content:gmatch("\n## ([^\n]+)") do
-            table.insert(sections, section_name)
+        for line in content:gmatch("[^\n]+") do
+            local name = line:match("^%s*##%s+(.+)$")
+            if name then
+                table.insert(sections, name)
+            end
         end
         return sections
+    end
+
+    -- Streaming extraction of unfinished tasks by section.
+    -- Scans line-by-line, tracking the current section heading.
+    -- Returns a map: section_name -> { task lines }
+    function helpers.extract_unfinished_tasks_by_section(content)
+        content = content:gsub("\r\n", "\n"):gsub("\r", "\n")
+        local tasks_by_section = {}
+        local current_section = nil
+
+        for line in content:gmatch("[^\n]+") do
+            local heading = line:match("^%s*##%s+(.+)$")
+            if heading then
+                current_section = heading
+                if not tasks_by_section[current_section] then
+                    tasks_by_section[current_section] = {}
+                end
+            else
+                if current_section then
+                    -- Skip frontmatter separator lines
+                    if line == "---" or line:match("^%s*$") then
+                        goto continue
+                    end
+                    local trimmed = line:gsub("^%s+", ""):gsub("%s+$", "")
+                    local checkbox = trimmed:match("^%s*[%-%*]%s*%[(.-)%]")
+                    if checkbox then
+                        local is_finished = (checkbox == "x" or checkbox == "X")
+                        if not is_finished then
+                            table.insert(tasks_by_section[current_section], trimmed)
+                        end
+                    end
+                end
+            end
+            ::continue::
+        end
+
+        return tasks_by_section
     end
 
     return helpers
@@ -994,16 +1078,8 @@ function M.create_journal_content(journal_type, target_dir)
     if prev_path then
         local prev_content = helpers.read_file(prev_path)
         if prev_content then
-            -- Extract ALL sections from the previous journal, not just configured ones
-            local all_sections = helpers.extract_all_sections(prev_content)
-
-            -- Look for unfinished tasks in all sections found
-            for _, section in ipairs(all_sections) do
-                local tasks = helpers.extract_unfinished_tasks(prev_content, section)
-                if tasks and #tasks > 0 then
-                    section_tasks[section] = tasks
-                end
-            end
+            -- Streaming carryover: unfinished tasks grouped by section
+            section_tasks = helpers.extract_unfinished_tasks_by_section(prev_content)
         end
     end
 
@@ -1039,6 +1115,11 @@ function M.create_journal_content(journal_type, target_dir)
             table.insert(content_parts, "## " .. section)
             table.insert(content_parts, table.concat(tasks, "\n"))
             table.insert(content_parts, "")
+            if config.advanced and config.advanced.debug_mode then
+
+            end
+        elseif not is_configured and (not tasks or #tasks == 0) then
+
         end
     end
 

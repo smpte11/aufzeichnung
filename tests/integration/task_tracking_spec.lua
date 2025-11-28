@@ -1,5 +1,35 @@
 -- Integration tests for task tracking functionality
 local notes = require('notes')
+local utils = require('notes.utils')
+
+-- Helper: fetch number of events by type from the SQLite DB for assertions
+local function fetch_events_by_type(db_path, event_type)
+    local ok, sqlite = pcall(require, "sqlite")
+    if not ok then
+        error("sqlite.lua not available for tests")
+    end
+    local db = sqlite.new(db_path)
+    if db.open then
+        db:open()
+    end
+    local rows = db:eval([[SELECT COUNT(*) AS c FROM task_events WHERE event_type = ?]], { event_type })
+    return (rows and rows[1] and rows[1].c) or 0
+end
+local utils = require('notes.utils')
+
+-- Helper: fetch number of events by type from the SQLite DB for assertions
+local function fetch_events_by_type(db_path, event_type)
+    local ok, sqlite = pcall(require, "sqlite")
+    if not ok then
+        error("sqlite.lua not available for tests")
+    end
+    local db = sqlite.new(db_path)
+    if db.open then
+        db:open()
+    end
+    local rows = db:eval([[SELECT COUNT(*) AS c FROM task_events WHERE event_type = ?]], { event_type })
+    return (rows and rows[1] and rows[1].c) or 0
+end
 
 describe("Task Tracking Integration", function()
     local temp_dir
@@ -54,6 +84,40 @@ describe("Task Tracking Integration", function()
     end)
 
     describe("task creation and tracking", function()
+        it("should update on URI parent change", function()
+            local filepath = temp_dir .. "/test-note.md"
+            local parent1 = utils.generate_uuid_v7()
+            local parent2 = utils.generate_uuid_v7()
+            local child = utils.generate_uuid_v7()
+
+            local content = {
+                "# Test Note",
+                "",
+                string.format("- [ ] Parent 1 [ ](task://%s)", parent1),
+                string.format("  - [ ] Child [ ](task://%s?parent=%s)", child, parent1),
+            }
+            local f = io.open(filepath, "w"); f:write(table.concat(content, "\n")); f:close()
+
+            vim.cmd("edit " .. filepath)
+            local buf = vim.api.nvim_get_current_buf()
+            vim.cmd("write")
+            vim.wait(200)
+
+            -- Change child's parent in URI (should emit task_updated)
+            vim.api.nvim_buf_set_lines(buf, 4, 5, false, {
+                string.format("  - [ ] Child [ ](task://%s?parent=%s)", child, parent2),
+            })
+            vim.cmd("write")
+            vim.wait(200)
+
+            local db_path = test_config.tracking.personal.database_path
+            assert.are.equal(1, vim.fn.filereadable(db_path))
+            -- Assert DB has at least one task_updated due to parent change
+            local updated = fetch_events_by_type(db_path, "task_updated")
+            assert.is_true(updated >= 1)
+
+            vim.api.nvim_buf_delete(buf, { force = true })
+        end)
         it("should track new tasks in markdown file", function()
             -- Create a test markdown file
             local filepath = temp_dir .. "/test-note.md"
@@ -80,40 +144,69 @@ describe("Task Tracking Integration", function()
             -- Verify database was created
             local db_path = test_config.tracking.personal.database_path
             assert.are.equal(1, vim.fn.filereadable(db_path))
+            -- Assert only creation event; no updates/state/completion/reopen on initial save
+            local created = fetch_events_by_type(db_path, "task_created")
+            local updated = fetch_events_by_type(db_path, "task_updated")
+            local state_changed = fetch_events_by_type(db_path, "task_state_changed")
+            local completed = fetch_events_by_type(db_path, "task_completed")
+            local reopened = fetch_events_by_type(db_path, "task_reopened")
+            assert.is_true(created >= 1)
+            assert.are.equal(0, updated)
+            assert.are.equal(0, state_changed)
+            assert.are.equal(0, completed)
+            assert.are.equal(0, reopened)
 
             -- Clean up buffer
             vim.api.nvim_buf_delete(buf, { force = true })
         end)
 
-        it("should update task state when checkbox changes", function()
+        it("should track content change, completion, reopen, and state changes", function()
             local filepath = temp_dir .. "/test-note.md"
-            local uuid = require('notes.utils').generate_uuid_v7()
+            local uuid = utils.generate_uuid_v7()
 
-            -- Create initial task (unchecked)
+            -- Create initial task (CREATED)
             local task_content = {
                 "# Test Note",
                 "",
                 string.format("- [ ] Test task [ ](task://%s)", uuid),
             }
+            local file = io.open(filepath, "w"); file:write(table.concat(task_content, "\n")); file:close()
 
-            local file = io.open(filepath, "w")
-            file:write(table.concat(task_content, "\n"))
-            file:close()
-
-            -- Open and save
+            -- Open and initial save
             vim.cmd("edit " .. filepath)
             local buf = vim.api.nvim_get_current_buf()
             vim.cmd("write")
             vim.wait(200)
 
-            -- Update task to completed
+            -- Content change (should emit task_updated)
             vim.api.nvim_buf_set_lines(buf, 2, 3, false, {
-                string.format("- [x] Test task [ ](task://%s)", uuid)
+                string.format("- [ ] Test task UPDATED [ ](task://%s)", uuid)
             })
             vim.cmd("write")
             vim.wait(200)
 
-            -- Verify tracking (database should exist)
+            -- State change to IN_PROGRESS (should emit task_state_changed)
+            vim.api.nvim_buf_set_lines(buf, 2, 3, false, {
+                string.format("- [-] Test task UPDATED [ ](task://%s)", uuid)
+            })
+            vim.cmd("write")
+            vim.wait(200)
+
+            -- Completion (should emit task_completed)
+            vim.api.nvim_buf_set_lines(buf, 2, 3, false, {
+                string.format("- [x] Test task UPDATED [ ](task://%s)", uuid)
+            })
+            vim.cmd("write")
+            vim.wait(200)
+
+            -- Reopen (should emit task_reopened)
+            vim.api.nvim_buf_set_lines(buf, 2, 3, false, {
+                string.format("- [ ] Test task UPDATED [ ](task://%s)", uuid)
+            })
+            vim.cmd("write")
+            vim.wait(200)
+
+            -- Database should exist at least
             local db_path = test_config.tracking.personal.database_path
             assert.are.equal(1, vim.fn.filereadable(db_path))
 
@@ -253,6 +346,48 @@ describe("Task Tracking Integration", function()
     end)
 
     describe("database operations", function()
+        it("should not emit events on no-op save", function()
+            local filepath = temp_dir .. "/test-note.md"
+            local uuid = utils.generate_uuid_v7()
+
+            -- Create initial task
+            local task_content = {
+                "# Test",
+                string.format("- [ ] Task A [ ](task://%s)", uuid),
+            }
+            local f = io.open(filepath, "w"); f:write(table.concat(task_content, "\n")); f:close()
+
+            -- Open and save
+            vim.cmd("edit " .. filepath)
+            local buf = vim.api.nvim_get_current_buf()
+            vim.cmd("write")
+            vim.wait(200)
+            local db_path = test_config.tracking.personal.database_path
+            -- Capture event counts before no-op save
+            local updated_before = fetch_events_by_type(db_path, "task_updated")
+            local state_changed_before = fetch_events_by_type(db_path, "task_state_changed")
+            local completed_before = fetch_events_by_type(db_path, "task_completed")
+            local reopened_before = fetch_events_by_type(db_path, "task_reopened")
+
+            -- Save again without changes (no-op)
+            vim.cmd("write")
+            vim.wait(200)
+            -- Assert no new events were emitted
+            local updated_after = fetch_events_by_type(db_path, "task_updated")
+            local state_changed_after = fetch_events_by_type(db_path, "task_state_changed")
+            local completed_after = fetch_events_by_type(db_path, "task_completed")
+            local reopened_after = fetch_events_by_type(db_path, "task_reopened")
+            assert.are.equal(updated_before, updated_after)
+            assert.are.equal(state_changed_before, state_changed_after)
+            assert.are.equal(completed_before, completed_after)
+            assert.are.equal(reopened_before, reopened_after)
+
+            -- Database should exist; no error thrown. We rely on absence of notifications in CI config.
+            local db_path = test_config.tracking.personal.database_path
+            assert.are.equal(1, vim.fn.filereadable(db_path))
+
+            vim.api.nvim_buf_delete(buf, { force = true })
+        end)
         it("should create database on first save", function()
             local db_path = test_config.tracking.personal.database_path
 

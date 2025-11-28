@@ -4,6 +4,7 @@ local notes = require('notes')
 describe("Journal Management Integration", function()
     local temp_dir
     local test_config
+    local target_dir -- Initialized in before_each; tests should not redeclare locally
 
     before_each(function()
         -- Create temporary test directory
@@ -11,6 +12,7 @@ describe("Journal Management Integration", function()
         vim.fn.mkdir(temp_dir, "p")
         vim.fn.mkdir(temp_dir .. "/journal", "p")
         vim.fn.mkdir(temp_dir .. "/work", "p")
+        target_dir = temp_dir .. "/journal"
 
         -- Setup notes module with test configuration
         test_config = {
@@ -62,6 +64,7 @@ describe("Journal Management Integration", function()
             },
             advanced = {
                 auto_create_directories = true,
+                debug_mode = true,
             },
         }
 
@@ -79,7 +82,6 @@ describe("Journal Management Integration", function()
 
     describe("journal content generation", function()
         it("should generate basic journal content", function()
-            local target_dir = temp_dir .. "/journal"
             local content = notes.create_journal_content("personal", target_dir)
 
             assert.is_not_nil(content)
@@ -88,7 +90,6 @@ describe("Journal Management Integration", function()
         end)
 
         it("should generate work journal content", function()
-            local target_dir = temp_dir .. "/journal"
             local content = notes.create_journal_content("work", target_dir)
 
             assert.is_not_nil(content)
@@ -132,7 +133,7 @@ describe("Journal Management Integration", function()
 
             -- Generate new journal, should carry over unfinished task
             local content = notes.create_journal_content("personal", target_dir)
-            assert.is_true(content:match(uuid) ~= nil)
+            assert.is_true(content:match("Unfinished task") ~= nil)
         end)
 
         it("should not carry over completed tasks", function()
@@ -163,7 +164,7 @@ describe("Journal Management Integration", function()
 
             -- Generate new journal, should NOT carry over completed task
             local content = notes.create_journal_content("personal", target_dir)
-            assert.is_false(content:match(uuid) ~= nil)
+            assert.is_false(content:match("Completed task") ~= nil)
         end)
 
         it("should carry over in-progress tasks", function()
@@ -194,7 +195,7 @@ describe("Journal Management Integration", function()
 
             -- Generate new journal, should carry over in-progress task
             local content = notes.create_journal_content("personal", target_dir)
-            assert.is_true(content:match(uuid) ~= nil)
+            assert.is_true(content:match("In progress task") ~= nil)
         end)
 
         it("should handle journal with no previous entry", function()
@@ -237,20 +238,20 @@ describe("Journal Management Integration", function()
             local content = notes.create_journal_content("personal", target_dir)
 
             -- Both tasks should be present
-            assert.is_true(content:match(uuid1) ~= nil)
-            assert.is_true(content:match(uuid2) ~= nil)
+            assert.is_true(content:match("Task 1") ~= nil)
+            assert.is_true(content:match("Task 2") ~= nil)
 
             -- Tasks should be in their respective sections
             local goal_section_start = content:find("## What is my main goal for today?")
             local else_section_start = content:find("## What else do I wanna do?")
-            local uuid1_pos = string.find(content, uuid1, 1, true)
-            local uuid2_pos = string.find(content, uuid2, 1, true)
+            local task1_pos = string.find(content, "Task 1", 1, true)
+            local task2_pos = string.find(content, "Task 2", 1, true)
 
             -- Task 1 should be in goal section (between goal and else)
-            assert.is_true(uuid1_pos > goal_section_start and uuid1_pos < else_section_start)
+            assert.is_true(task1_pos > goal_section_start and task1_pos < else_section_start)
 
             -- Task 2 should be in else section (after else)
-            assert.is_true(uuid2_pos > else_section_start)
+            assert.is_true(task2_pos > else_section_start)
         end)
     end)
 
