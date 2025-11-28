@@ -80,7 +80,7 @@ describe("Journal Management Integration", function()
     describe("journal content generation", function()
         it("should generate basic journal content", function()
             local target_dir = temp_dir .. "/journal"
-            local content = notes.create_journal_content("personal")
+            local content = notes.create_journal_content("personal", target_dir)
 
             assert.is_not_nil(content)
             assert.is_true(type(content) == "string")
@@ -88,7 +88,8 @@ describe("Journal Management Integration", function()
         end)
 
         it("should generate work journal content", function()
-            local content = notes.create_journal_content("work")
+            local target_dir = temp_dir .. "/journal"
+            local content = notes.create_journal_content("work", target_dir)
 
             assert.is_not_nil(content)
             assert.is_true(content:match("## Main tasks") ~= nil)
@@ -96,11 +97,160 @@ describe("Journal Management Integration", function()
         end)
 
         it("should include all configured sections", function()
-            local content = notes.create_journal_content("personal")
+            local content = notes.create_journal_content("personal", target_dir)
 
             for _, section in ipairs(test_config.journal.daily_template.personal.sections) do
                 assert.is_true(content:match(vim.pesc(section)) ~= nil, "Missing section: " .. section)
             end
+        end)
+
+        it("should carry over unfinished tasks from previous journal", function()
+            local utils = require('notes.utils')
+            local uuid = utils.generate_uuid_v7()
+
+            -- Create previous journal with unfinished task
+            local prev_date = os.date("%Y-%m-%d", os.time() - 86400)
+            local prev_file = string.format("%s/perso-%s.md", target_dir, prev_date)
+
+            local prev_content = {
+                "---",
+                "title: Previous Journal",
+                "---",
+                "",
+                "## What is my main goal for today?",
+                "",
+                string.format("- [ ] Unfinished task [ ](task://%s)", uuid),
+                "",
+                "## What else do I wanna do?",
+                "",
+                "## What did I do today?",
+            }
+
+            local file = io.open(prev_file, "w")
+            file:write(table.concat(prev_content, "\n"))
+            file:close()
+
+            -- Generate new journal, should carry over unfinished task
+            local content = notes.create_journal_content("personal", target_dir)
+            assert.is_true(content:match(uuid) ~= nil)
+        end)
+
+        it("should not carry over completed tasks", function()
+            local utils = require('notes.utils')
+            local uuid = utils.generate_uuid_v7()
+
+            -- Create previous journal with completed task
+            local prev_date = os.date("%Y-%m-%d", os.time() - 86400)
+            local prev_file = string.format("%s/perso-%s.md", target_dir, prev_date)
+
+            local prev_content = {
+                "---",
+                "title: Previous Journal",
+                "---",
+                "",
+                "## What is my main goal for today?",
+                "",
+                string.format("- [x] Completed task [ ](task://%s)", uuid),
+                "",
+                "## What else do I wanna do?",
+                "",
+                "## What did I do today?",
+            }
+
+            local file = io.open(prev_file, "w")
+            file:write(table.concat(prev_content, "\n"))
+            file:close()
+
+            -- Generate new journal, should NOT carry over completed task
+            local content = notes.create_journal_content("personal", target_dir)
+            assert.is_false(content:match(uuid) ~= nil)
+        end)
+
+        it("should carry over in-progress tasks", function()
+            local utils = require('notes.utils')
+            local uuid = utils.generate_uuid_v7()
+
+            -- Create previous journal with in-progress task
+            local prev_date = os.date("%Y-%m-%d", os.time() - 86400)
+            local prev_file = string.format("%s/perso-%s.md", target_dir, prev_date)
+
+            local prev_content = {
+                "---",
+                "title: Previous Journal",
+                "---",
+                "",
+                "## What is my main goal for today?",
+                "",
+                string.format("- [-] In progress task [ ](task://%s)", uuid),
+                "",
+                "## What else do I wanna do?",
+                "",
+                "## What did I do today?",
+            }
+
+            local file = io.open(prev_file, "w")
+            file:write(table.concat(prev_content, "\n"))
+            file:close()
+
+            -- Generate new journal, should carry over in-progress task
+            local content = notes.create_journal_content("personal", target_dir)
+            assert.is_true(content:match(uuid) ~= nil)
+        end)
+
+        it("should handle journal with no previous entry", function()
+            -- No previous journal exists
+            local content = notes.create_journal_content("personal", target_dir)
+            assert.is_not_nil(content)
+            assert.is_true(type(content) == "string")
+        end)
+
+        it("should preserve task order from sections", function()
+            local utils = require('notes.utils')
+            local uuid1 = utils.generate_uuid_v7()
+            local uuid2 = utils.generate_uuid_v7()
+
+            -- Create previous journal with tasks in different sections
+            local prev_date = os.date("%Y-%m-%d", os.time() - 86400)
+            local prev_file = string.format("%s/perso-%s.md", target_dir, prev_date)
+
+            local prev_content = {
+                "---",
+                "title: Previous Journal",
+                "---",
+                "",
+                "## What is my main goal for today?",
+                "",
+                string.format("- [ ] Task 1 [ ](task://%s)", uuid1),
+                "",
+                "## What else do I wanna do?",
+                "",
+                string.format("- [ ] Task 2 [ ](task://%s)", uuid2),
+                "",
+                "## What did I do today?",
+            }
+
+            local file = io.open(prev_file, "w")
+            file:write(table.concat(prev_content, "\n"))
+            file:close()
+
+            -- Generate new journal with carryover
+            local content = notes.create_journal_content("personal", target_dir)
+
+            -- Both tasks should be present
+            assert.is_true(content:match(uuid1) ~= nil)
+            assert.is_true(content:match(uuid2) ~= nil)
+
+            -- Tasks should be in their respective sections
+            local goal_section_start = content:find("## What is my main goal for today?")
+            local else_section_start = content:find("## What else do I wanna do?")
+            local uuid1_pos = string.find(content, uuid1, 1, true)
+            local uuid2_pos = string.find(content, uuid2, 1, true)
+
+            -- Task 1 should be in goal section (between goal and else)
+            assert.is_true(uuid1_pos > goal_section_start and uuid1_pos < else_section_start)
+
+            -- Task 2 should be in else section (after else)
+            assert.is_true(uuid2_pos > else_section_start)
         end)
     end)
 
@@ -181,7 +331,8 @@ describe("Journal Management Integration", function()
 
     describe("configuration", function()
         it("should use configured sections in journal template", function()
-            local content = notes.create_journal_content("personal")
+            local target_dir = temp_dir .. "/journal"
+            local content = notes.create_journal_content("personal", target_dir)
 
             -- Should include all configured sections
             for _, section in ipairs(test_config.journal.daily_template.personal.sections) do

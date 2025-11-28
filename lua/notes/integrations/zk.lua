@@ -298,7 +298,7 @@ function M._register_commands(config)
         M._pick_journal_type(function(journal_type)
             M._pick_directory(config.directories.notebook, function(dir)
                 local target_dir = config.directories.notebook .. "/" .. dir
-                local content = M.notes.create_journal_content(journal_type)
+                local content = M.notes.create_journal_content(journal_type, target_dir)
                 local group = journal_type == "personal" and "personal-journal" or "work-journal"
 
                 M.zk.new({ dir = dir, group = group, content = content })
@@ -310,7 +310,7 @@ function M._register_commands(config)
     commands.add("ZkNewDailyJournal", function(options)
         M._pick_directory(config.directories.notebook, function(dir)
             local target_dir = config.directories.notebook .. "/" .. dir
-            local content = M.notes.create_journal_content("personal")
+            local content = M.notes.create_journal_content("personal", target_dir)
 
             M.zk.new({ dir = dir, group = "personal-journal", content = content })
         end)
@@ -320,7 +320,7 @@ function M._register_commands(config)
         -- Default to work/journal directory for work journals
         local dir = "work/journal"
         local target_dir = config.directories.notebook .. "/" .. dir
-        local content = M.notes.create_journal_content("work")
+        local content = M.notes.create_journal_content("work", target_dir)
 
         M.zk.new({ dir = dir, group = "work-journal", content = content })
     end)

@@ -980,15 +980,66 @@ function M._create_journal_helpers()
     return helpers
 end
 
-function M.create_journal_content(journal_type)
+-- Create journal content, carrying over unfinished tasks from previous journal (no DB tracking)
+function M.create_journal_content(journal_type, target_dir)
     local journal_config = config.journal.daily_template[journal_type]
+    local helpers = M._create_journal_helpers()
+    local prev_path = nil
+    if target_dir then
+        prev_path = helpers.get_most_recent_journal_note(target_dir, journal_config.prefix)
+    end
+
+    local section_tasks = {}
+
+    if prev_path then
+        local prev_content = helpers.read_file(prev_path)
+        if prev_content then
+            -- Extract ALL sections from the previous journal, not just configured ones
+            local all_sections = helpers.extract_all_sections(prev_content)
+
+            -- Look for unfinished tasks in all sections found
+            for _, section in ipairs(all_sections) do
+                local tasks = helpers.extract_unfinished_tasks(prev_content, section)
+                if tasks and #tasks > 0 then
+                    section_tasks[section] = tasks
+                end
+            end
+        end
+    end
 
     -- Generate only body content - ZK handles frontmatter via ~/.config/zk templates
     local content_parts = {}
 
+    -- Start with configured sections (maintain template structure)
     for _, section in ipairs(journal_config.sections) do
         table.insert(content_parts, "## " .. section)
-        table.insert(content_parts, "")
+        local tasks = section_tasks[section]
+        if tasks and #tasks > 0 then
+            table.insert(content_parts, table.concat(tasks, "\n"))
+            table.insert(content_parts, "")
+        else
+            table.insert(content_parts, "")
+        end
+    end
+
+    -- Add any custom sections that had carried over tasks
+    -- (sections not in the configured template)
+    for section, tasks in pairs(section_tasks) do
+        -- Check if this section is already in the configured sections
+        local is_configured = false
+        for _, configured_section in ipairs(journal_config.sections) do
+            if configured_section == section then
+                is_configured = true
+                break
+            end
+        end
+
+        -- If it's a custom section with tasks, add it
+        if not is_configured and tasks and #tasks > 0 then
+            table.insert(content_parts, "## " .. section)
+            table.insert(content_parts, table.concat(tasks, "\n"))
+            table.insert(content_parts, "")
+        end
     end
 
     return table.concat(content_parts, "\n")
