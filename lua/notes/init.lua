@@ -97,9 +97,12 @@ local default_config = {
             work_journal = "w",  -- <leader>nw
 
             -- Note browsing
-            open_notes = "o",  -- <leader>no
-            find_notes = "f",  -- <leader>nf
-            browse_tags = "t", -- <leader>nt
+            open_notes = "o",   -- <leader>no
+            
+            -- Search Submenu (s)
+            find_notes = "sn",  -- <leader>nsn (Search Notes)
+            browse_tags = "st", -- <leader>nst (Search Tags)
+            related_notes = "sr", -- <leader>nsr (Search Related/Backlinks)
 
             -- 📊 STATS & DASHBOARDS (Enhanced!)
             dashboard = "d",       -- <leader>nd (personal dashboard)
@@ -1598,28 +1601,24 @@ function M._setup_keymaps()
     -- VISUALIZATION KEYMAPS (Always Available if visualization enabled)
     -- ═══════════════════════════════════════════════════════════════════
 
-    -- Fix: Avoid <leader>nt conflict by making <leader>nt open a submenu (MiniClue or which-key style)
-    if mappings.browse_tags then
-        -- Map actual tag search to <leader>ntt (Tags)
-        vim.keymap.set("n", prefix .. "tt",
-            function()
-                if M.zk_integration and M.zk_integration.is_available then
-                    vim.cmd("ZkTags")
-                else
-                    print("Zk integration not available for tags")
-                end
-            end,
-            vim.tbl_extend("force", opts, { desc = "Browse tags (zk)" }))
+    -- ═══════════════════════════════════════════════════════════════════
+    -- SUBMENU HELPERS
+    -- ═══════════════════════════════════════════════════════════════════
 
-        -- Submenu info
-        vim.keymap.set("n", prefix .. mappings.browse_tags,
-            function()
-                print("<leader>nt: [tt]ags, [ts] task stats, [tc] completions, [tp] pie, [tT] trend, [ta] activity, [tw] work stats")
-            end,
-            vim.tbl_extend("force", opts, { desc = "Notes submenu: tags/stats" }))
-    end
+    -- Search Submenu (<leader>ns)
+    vim.keymap.set("n", prefix .. "s", function()
+        print("🔍 Search: [n]otes, [t]ags, [r]elated/backlinks")
+    end, vim.tbl_extend("force", opts, { desc = "Search submenu" }))
 
-    -- All other <leader>nt* bindings (stats, completions, etc)
+    -- Task Submenu (<leader>nt)
+    vim.keymap.set("n", prefix .. "t", function()
+        print("☑ Tasks: [s]tats, [c]ompletions, [p]ie chart, [T]rend, [a]ctivity, [w]ork stats")
+    end, vim.tbl_extend("force", opts, { desc = "Task submenu" }))
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- VISUALIZATION KEYMAPS (Always Available if visualization enabled)
+    -- ═══════════════════════════════════════════════════════════════════
+
     if config.visualization.enabled then
         if mappings.task_stats then
             vim.keymap.set("n", prefix .. mappings.task_stats,
@@ -1638,7 +1637,9 @@ function M._setup_keymaps()
         end
         if mappings.productivity_trend then
             -- Re-mapped to T to avoid conflict with tt (tags)
-            vim.keymap.set("n", prefix .. "tT",
+            -- Wait, tags is now 'st' so 'tt' is free!
+            -- Let's use whatever is in mappings.productivity_trend (default 'tt')
+            vim.keymap.set("n", prefix .. mappings.productivity_trend,
                 "<Cmd>NotesTrend<CR>",
                 vim.tbl_extend("force", opts, { desc = "Productivity Trend" }))
         end
