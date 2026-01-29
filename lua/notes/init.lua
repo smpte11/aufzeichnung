@@ -1598,67 +1598,55 @@ function M._setup_keymaps()
     -- VISUALIZATION KEYMAPS (Always Available if visualization enabled)
     -- ═══════════════════════════════════════════════════════════════════
 
+    -- Fix: Avoid <leader>nt conflict by making <leader>nt open a submenu (MiniClue or which-key style)
+    if mappings.browse_tags then
+        -- Map actual tag search to <leader>ntt (Tags)
+        vim.keymap.set("n", prefix .. "tt",
+            function()
+                if M.zk_integration and M.zk_integration.is_available then
+                    vim.cmd("ZkTags")
+                else
+                    print("Zk integration not available for tags")
+                end
+            end,
+            vim.tbl_extend("force", opts, { desc = "Browse tags (zk)" }))
+
+        -- Submenu info
+        vim.keymap.set("n", prefix .. mappings.browse_tags,
+            function()
+                print("<leader>nt: [tt]ags, [ts] task stats, [tc] completions, [tp] pie, [tT] trend, [ta] activity, [tw] work stats")
+            end,
+            vim.tbl_extend("force", opts, { desc = "Notes submenu: tags/stats" }))
+    end
+
+    -- All other <leader>nt* bindings (stats, completions, etc)
     if config.visualization.enabled then
-        if mappings.dashboard then
-            vim.keymap.set("n", prefix .. mappings.dashboard,
-                "<Cmd>NotesDashboard<CR>",
-                vim.tbl_extend("force", opts, { desc = "Task dashboard" }))
-        end
-
-        if mappings.work_dashboard then
-            vim.keymap.set("n", prefix .. mappings.work_dashboard,
-                "<Cmd>NotesDashboard work<CR>",
-                vim.tbl_extend("force", opts, { desc = "Work dashboard" }))
-        end
-
-        if mappings.today then
-            vim.keymap.set("n", prefix .. mappings.today,
-                "<Cmd>NotesToday<CR>",
-                vim.tbl_extend("force", opts, { desc = "Today's overview" }))
-        end
-
-        if mappings.yesterday then
-            vim.keymap.set("n", prefix .. mappings.yesterday,
-                "<Cmd>NotesYesterday<CR>",
-                vim.tbl_extend("force", opts, { desc = "Yesterday's activity" }))
-        end
-
-        if mappings.weekly then
-            vim.keymap.set("n", prefix .. mappings.weekly,
-                "<Cmd>NotesWeekly<CR>",
-                vim.tbl_extend("force", opts, { desc = "Weekly overview" }))
-        end
-
-        if mappings.last_week then
-            vim.keymap.set("n", prefix .. mappings.last_week,
-                "<Cmd>NotesLastWeek<CR>",
-                vim.tbl_extend("force", opts, { desc = "Last week summary" }))
-        end
-
-        if mappings.friday_review then
-            vim.keymap.set("n", prefix .. mappings.friday_review,
-                "<Cmd>NotesReview<CR>",
-                vim.tbl_extend("force", opts, { desc = "Comprehensive review" }))
-        end
-
-        if mappings.quick_stats then
-            vim.keymap.set("n", prefix .. mappings.quick_stats,
-                "<Cmd>NotesStats<CR>",
-                vim.tbl_extend("force", opts, { desc = "Quick task statistics" }))
-        end
-
         if mappings.task_stats then
             vim.keymap.set("n", prefix .. mappings.task_stats,
                 "<Cmd>NotesDashboard<CR>",
                 vim.tbl_extend("force", opts, { desc = "Detailed task statistics" }))
         end
-
         if mappings.task_completions then
             vim.keymap.set("n", prefix .. mappings.task_completions,
                 "<Cmd>NotesCompletions<CR>",
                 vim.tbl_extend("force", opts, { desc = "Task completions" }))
         end
-
+        if mappings.task_states then
+            vim.keymap.set("n", prefix .. mappings.task_states,
+                "<Cmd>NotesStates<CR>",
+                vim.tbl_extend("force", opts, { desc = "Task state pie chart" }))
+        end
+        if mappings.productivity_trend then
+            -- Re-mapped to T to avoid conflict with tt (tags)
+            vim.keymap.set("n", prefix .. "tT",
+                "<Cmd>NotesTrend<CR>",
+                vim.tbl_extend("force", opts, { desc = "Productivity Trend" }))
+        end
+        if mappings.recent_activity then
+            vim.keymap.set("n", prefix .. mappings.recent_activity,
+                "<Cmd>NotesActivity<CR>",
+                vim.tbl_extend("force", opts, { desc = "Recent activity log" }))
+        end
         if mappings.work_stats then
             vim.keymap.set("n", prefix .. mappings.work_stats,
                 "<Cmd>NotesDashboard work<CR>",
